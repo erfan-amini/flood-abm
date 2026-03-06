@@ -1,5 +1,5 @@
 """
-Flood Adaptation ABM — Interactive Dashboard (v12)
+Flood Adaptation ABM — Interactive Dashboard
 
 Two modes:
   - Research Mode: abstract/synthetic settings with noise toggles
@@ -238,7 +238,7 @@ st.markdown("""
 # ============================================================================
 
 st.sidebar.title("🌊 Flood Adaptation ABM")
-st.sidebar.caption("Bayesian Belief Updating Model (v12)")
+st.sidebar.caption("Bayesian Belief Updating Model")
 st.sidebar.divider()
 
 mode = st.sidebar.radio(
@@ -253,7 +253,6 @@ st.sidebar.divider()
 st.sidebar.header("⚙️ General Settings")
 
 time_steps = st.sidebar.slider("Time Steps", 10, 500, 100, step=10)
-random_seed = st.sidebar.number_input("Random Seed", 0, 9999, 42)
 n_agents = st.sidebar.slider("Number of Agents", 20, 1000, 200, step=10)
 
 st.sidebar.divider()
@@ -390,24 +389,26 @@ odds $O_i = 0.05 / 0.95 \\approx 0.0526$, meaning the agent considers
 $H_0$ roughly 19 times more likely than $H_1$.
 
 **Step 2 — Multiply odds by the Bayes factor.** The Bayes factor
-$\\Lambda$ quantifies the evidential strength of a single observation,
+$\\lambda$ quantifies the evidential strength of a single observation,
 defined as the likelihood ratio (Kass & Raftery, 1995):
 """)
-    st.latex(r"\Lambda = \frac{P(\text{evidence} \mid H_1)}{P(\text{evidence} \mid H_0)}")
+    st.latex(r"\lambda = \frac{P(\text{evidence} \mid H_1)}{P(\text{evidence} \mid H_0)}")
     st.markdown("""
 The posterior odds are obtained by multiplying the prior odds by the
 Bayes factor:
 """)
-    st.latex(r"O_i^{\,\text{posterior}} = O_i^{\,\text{prior}} \times \Lambda")
+    st.latex(r"O_i^{\,\text{posterior}} = O_i^{\,\text{prior}} \times \lambda")
     st.markdown("""
-A Bayes factor $\\Lambda > 1$ shifts belief toward $H_1$; $\\Lambda = 1$
-is uninformative; $\\Lambda < 1$ would shift toward $H_0$ (not used in
-this model, since all evidence channels are non-negative). Multiple
-independent evidence sources compose multiplicatively — if an agent
-receives evidence from channels with factors $\\Lambda_1, \\Lambda_2,
-\\ldots, \\Lambda_k$ in the same time step:
+A Bayes factor $\\lambda > 1$ shifts belief toward $H_1$; $\\lambda = 1$
+is uninformative; $\\lambda < 1$ would shift toward $H_0$ (not used in
+this model, since all evidence channels are non-negative). This model
+uses three Bayes factors — $\\lambda_{\\text{flood}}$,
+$\\lambda_{\\text{social}}$, and $\\lambda_{\\text{similarity}}$ —
+corresponding to the three evidence channels. When multiple channels
+produce evidence in the same time step, their factors compose
+multiplicatively:
 """)
-    st.latex(r"O_i^{\,\text{posterior}} = O_i^{\,\text{prior}} \times \Lambda_1 \times \Lambda_2 \times \cdots \times \Lambda_k")
+    st.latex(r"O_i^{\,\text{posterior}} = O_i^{\,\text{prior}} \times \lambda_{\text{flood}} \times \lambda_{\text{social}} \times \lambda_{\text{similarity}}^{\,S(i,j)}")
 
     st.markdown("""
 **Step 3 — Convert posterior odds back to probability:**
@@ -420,22 +421,6 @@ characterized by a single scalar (the Bayes factor), and sequential
 updates reduce to repeated multiplication in the odds domain.
 """)
 
-    st.markdown("---")
-    st.markdown("**Worked example.** Agent with $P(H_1) = 0.05$ "
-                "experiences one flood ($\\Lambda = 1.20$):")
-    st.latex(r"""
-\begin{aligned}
-O^{\text{prior}} &= \frac{0.05}{1 - 0.05} = 0.05263 \\[6pt]
-O^{\text{posterior}} &= 0.05263 \times 1.20 = 0.06316 \\[6pt]
-P^{\text{posterior}}(H_1) &= \frac{0.06316}{1 + 0.06316} = 0.05941
-\end{aligned}
-""")
-    st.markdown("""
-A single flood shifts belief from 5.00% to 5.94% — a modest update
-consistent with the empirical observation that multiple flood events
-are required before households take action (Amini et al., 2025).
-""")
-
     st.subheader("3.2 &nbsp; Channel 1: Personal Flood Experience")
     st.markdown("""
 Each time step, a global flood level $f_t$ is drawn from a Generalized
@@ -445,7 +430,7 @@ availability heuristic (Tversky & Kahneman, 1974) — flood events are
 psychologically salient while dry years are cognitively inert:
 """)
     st.latex(r"""
-\Lambda_{\text{flood},i}^{(t)} =
+\lambda_{\text{flood},i}^{(t)} =
 \begin{cases}
 \lambda_{\text{flood}} & \text{if } f_t > z_i \quad \text{(flooded)} \\
 1 & \text{if } f_t \leq z_i \quad \text{(not flooded; no update)}
@@ -469,7 +454,7 @@ $i$ that are **newly observed** as having retrofitted at time $t$ (each
 neighbor is counted once — one-shot learning). For each
 $j \\in \\mathcal{N}_i^{(t)}$:
 """)
-    st.latex(r"\Lambda_{\text{social},j} = \lambda_{\text{social}}")
+    st.latex(r"\lambda_{\text{social},j} = \lambda_{\text{social}}")
     st.markdown("""
 This captures proximity-based social influence: living near someone who
 has taken action provides a direct signal about the appropriateness of
@@ -497,10 +482,10 @@ S(i,j) = \frac{\left|\{k : a_{i,k} = a_{j,k}\}\right|}{K}
 where $K$ is the total number of attributes and $a_{i,k}$ is agent $i$'s
 value for attribute $k$. The similarity-scaled Bayes factor is:
 """)
-    st.latex(r"\Lambda_{\text{similarity},j} = \lambda_{\text{similarity}}^{\,S(i,j)}")
+    st.latex(r"\lambda_{\text{similarity},j} = \lambda_{\text{similarity}}^{\,S(i,j)}")
     st.markdown("""
 When $S = 1$ (identical attributes), the full factor applies. When
-$S = 0$ (no shared attributes), $\\Lambda = 1$ (no update). This captures
+$S = 0$ (no shared attributes), $\\lambda = 1$ (no update). This captures
 the homophily mechanism (McPherson et al., 2001): agents are more
 influenced by those who share their characteristics. Social learning
 rate depends on attribute similarity between agents, reflecting
@@ -523,7 +508,7 @@ neighborhood. The full update is:
 """)
     st.latex(r"""
 O_i^{(t)} = O_i^{(t-1)}
-\;\times\; \Lambda_{\text{flood},i}^{(t)}
+\;\times\; \lambda_{\text{flood},i}^{(t)}
 \;\times\; \prod_{j \in \mathcal{N}_i^{(t)}} \lambda_{\text{social}}
 \;\times\; \prod_{j \in \mathcal{N}_i^{\text{same},(t)}}
 \lambda_{\text{similarity}}^{\,S(i,j)}
@@ -536,7 +521,7 @@ Because all Bayes factors are $\\geq 1$ and non-flood years contribute a
 factor of 1, belief is **monotonically non-decreasing** over time.
 """)
 
-    st.subheader("3.6 &nbsp; Decision Rule — Protection Motivation Theory (Rogers, 1975)")
+    st.subheader("3.6 &nbsp; Decision Rule — Protection Motivation Theory")
     st.markdown("""
 Each agent $i$ has an individual decision threshold
 $\\theta_i$ drawn at initialization from a truncated Normal distribution:
@@ -553,7 +538,7 @@ histories, representing variation in self-efficacy and perceived
 response costs (Rogers, 1975).
 """)
 
-    st.subheader("3.7 &nbsp; Flood Generation — GEV Distribution (Coles, 2001)")
+    st.subheader("3.7 &nbsp; Flood Generation — GEV Distribution")
     st.markdown("""
 Annual flood levels are sampled from a Generalized Extreme Value (GEV)
 distribution with CDF:
@@ -571,7 +556,7 @@ $\\xi$ the shape. The parameters are fitted to user-defined return-period
 to $[0, 1]$.
 """)
 
-    st.subheader("3.8 &nbsp; Edge Attributes — Jaccard Similarity (Jaccard, 1912)")
+    st.subheader("3.8 &nbsp; Edge Attributes — Jaccard Similarity")
     st.markdown("""
 Each network edge stores the Jaccard similarity
 $S(i,j) = |\\{k : a_{i,k} = a_{j,k}\\}| / K$. Connections are binary:
@@ -579,7 +564,7 @@ agents within `DISTANCE_THRESHOLD` are connected; agents beyond it are
 not. No distance decay weighting is applied to edges.
 """)
 
-    st.subheader("3.9 &nbsp; Neighborhood Identification — DBSCAN (Ester et al., 1996)")
+    st.subheader("3.9 &nbsp; Neighborhood Identification — DBSCAN")
     st.markdown("""
 Spatial neighborhoods are identified using DBSCAN with
 $\\varepsilon$ = `DISTANCE_THRESHOLD` and `min_samples` =
@@ -600,21 +585,22 @@ annual time-step loop executed by the model.
     st.graphviz_chart(r'''
     digraph workflow {
         graph [
-            rankdir=TB, fontname="Helvetica", fontsize=13,
-            bgcolor="transparent", pad=0.4, nodesep=0.4, ranksep=0.55
+            rankdir=TB, fontname="Helvetica", fontsize=10,
+            bgcolor="transparent", pad=0.2, nodesep=0.25, ranksep=0.35,
+            size="6.5,7.5", ratio="compress"
         ];
         node [
             shape=box, style="rounded,filled", fontname="Helvetica",
-            fontsize=10, fillcolor="#EBF5FB", color="#1B4F72",
-            penwidth=1.4, margin="0.18,0.10"
+            fontsize=8, fillcolor="#EBF5FB", color="#1B4F72",
+            penwidth=1.0, margin="0.12,0.06"
         ];
-        edge [fontname="Helvetica", fontsize=9, color="#2E86C1",
-              penwidth=1.2, arrowsize=0.8];
+        edge [fontname="Helvetica", fontsize=7, color="#2E86C1",
+              penwidth=0.9, arrowsize=0.6];
 
         /* ---- Initialization ---- */
         subgraph cluster_init {
             label=<<B>Initialization (once at t = 0)</B>>;
-            labeljust=l; fontname="Helvetica"; fontsize=12;
+            labeljust=l; fontname="Helvetica"; fontsize=9;
             style="dashed,rounded"; color="#1B4F72";
             bgcolor="#F8F9F9"; penwidth=1.0;
 
@@ -631,7 +617,7 @@ annual time-step loop executed by the model.
         /* ---- Annual loop ---- */
         subgraph cluster_loop {
             label=<<B>Annual Time-Step Loop (t = 1, 2, …, T)</B>>;
-            labeljust=l; fontname="Helvetica"; fontsize=12;
+            labeljust=l; fontname="Helvetica"; fontsize=9;
             style="dashed,rounded"; color="#1B4F72";
             bgcolor="#FDFEFE"; penwidth=1.0;
 
@@ -655,7 +641,7 @@ annual time-step loop executed by the model.
 
         /* ---- Connections ---- */
         FL  -> F1  [style=bold, label="  begin loop ", color="#E67E22",
-                     penwidth=1.6];
+                     penwidth=1.0];
         DC  -> F1  [style=dashed, label=" next t  ", color="#7F8C8D",
                      constraint=false];
 
@@ -663,9 +649,9 @@ annual time-step loop executed by the model.
         OUT [label=<<B>Outputs</B><BR/>Adoption curves · Belief evolution<BR/>Network maps · Exported CSV>,
              fillcolor="#D4E6F1", shape=box, style="rounded,filled"];
         DC  -> OUT [style=bold, label="  t = T (end) ", color="#E67E22",
-                     penwidth=1.6];
+                     penwidth=1.0];
     }
-    ''', use_container_width=True)
+    ''', use_container_width=False)
 
     # --- 5. Architecture ---
     st.markdown('<div class="doc-section-header">5 &nbsp; Architecture</div>',
@@ -673,14 +659,14 @@ annual time-step loop executed by the model.
     st.markdown("""
 | File | Description |
 |:---|:---|
-| `AAA_model_v12.py` | Main model: parameters, agents, three-channel Bayesian updating, simulation loop, visualization |
+| `AAA_model.py` | Main model: parameters, agents, three-channel Bayesian updating, simulation loop, visualization |
 | `FFF_flood.py` | GEV flood generation (Coles, 2001), clipped to [0, 1] |
 | `FFF_spatial.py` | Agent positions and elevations (grid, random, or CSV) |
 | `FFF_attributes.py` | Agent attributes and Jaccard similarity (Jaccard, 1912) |
 | `FFF_network.py` | Binary social network: edges within distance threshold |
 | `FFF_neighborhood.py` | DBSCAN neighborhood identification (Ester et al., 1996) |
 
-*All user-tunable parameters are defined only in `AAA_model_v12.py`.
+*All user-tunable parameters are defined only in `AAA_model.py`.
 Helper modules have no module-level defaults; all values are passed from
 the main file.*
 """)
@@ -770,12 +756,12 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | Parameter | Default | Description |
 |:---|:---:|:---|
 | `INITIAL_BELIEF` | 0.05 | Prior $P(H_1)$. Agents begin with mild awareness. |
-| `LAMBDA_FLOOD` | 1.20 | Ch.1: Bayes factor per flood event. |
-| `LAMBDA_SOCIAL` | 1.50 | Ch.2: Bayes factor per connected neighbor retrofit. Binary, full factor. |
-| `LAMBDA_SIMILARITY` | 3.00 | Ch.3: Bayes factor at full Jaccard similarity ($S=1$). Scaled: effective = $\\lambda^{S(i,j)}$. |
+| `LAMBDA_FLOOD` | 1.20 | Bayes factor per flood event (personal experience). |
+| `LAMBDA_SOCIAL` | 1.50 | Bayes factor per connected neighbor retrofit (proximity). |
+| `LAMBDA_SIMILARITY` | 3.00 | Bayes factor at full similarity ($S=1$). Scaled: $\\lambda_{\\text{similarity}}^{S(i,j)}$. |
 """)
 
-    st.subheader("9.2 &nbsp; PMT Threshold Parameters (Rogers, 1975)")
+    st.subheader("9.2 &nbsp; PMT Threshold Parameters")
     st.markdown("""
 | Parameter | Default | Description |
 |:---|:---:|:---|
@@ -859,6 +845,8 @@ Designed for application to a specific site. Upload:
 with tab_settings:
     st.title("🔧 Advanced Settings")
     st.markdown("Adjust spatial, network, attribute, and flood parameters below.")
+
+    random_seed = st.number_input("Random Seed", 0, 9999, 42)
 
     col_left, col_right = st.columns(2)
 
@@ -1100,8 +1088,8 @@ def make_figures(model):
     fig.tight_layout(w_pad=3)
     figs["belief"] = fig
 
-    # --- Figure 4: Network map (full width, compact height) ---
-    fig, ax1 = plt.subplots(figsize=(12, 6.5))
+    # --- Figure 4: Network map ---
+    fig, ax1 = plt.subplots(figsize=(10, 5))
 
     segs = []
     for u, v in model.G.edges():
