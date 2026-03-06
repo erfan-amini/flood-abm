@@ -119,8 +119,9 @@ div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
 /* ---------- Tabs ---------- */
 button[data-baseweb="tab"] {
     font-weight: 600 !important;
-    font-size: 1.08rem !important;
-    padding: 0.6rem 1.2rem !important;
+    font-size: 1.22rem !important;
+    padding: 0.7rem 1.4rem !important;
+    letter-spacing: 0.2px !important;
 }
 button[data-baseweb="tab"][aria-selected="true"] {
     color: var(--primary) !important;
@@ -366,122 +367,308 @@ and how household heterogeneity influences the diffusion of adaptation
 behavior through social networks (Amini et al., 2025).
 """)
 
-    # --- 2. Theoretical Framework ---
+
+    # --- 3. Theoretical Framework ---
     st.markdown('<div class="doc-section-header">3 &nbsp; Theoretical Framework</div>',
                 unsafe_allow_html=True)
 
-    st.subheader("3.1 &nbsp; Bayesian Belief Updating — Odds Form")
+    st.subheader("3.1 &nbsp; Bayesian Belief Updating — Full Formulation")
     st.markdown("""
-Each agent maintains $P(H_1)$, the probability that their situation
-warrants retrofitting. The update rule is Bayes' theorem in odds form
+Each agent $i$ maintains a subjective belief $P_i(H_1) \\in [0, 1]$,
+where $H_1$ = "my situation warrants retrofitting" and $H_0$ = "my
+situation does not warrant retrofitting." The updating mechanism
+proceeds through three algebraic steps at each evidence event
 (Jaynes, 2003, Ch. 4; Kass & Raftery, 1995):
+
+**Step 1 — Convert probability to odds.** The odds form provides a
+natural multiplicative framework for sequential evidence accumulation:
 """)
+    st.latex(r"O_i = \frac{P_i(H_1)}{1 - P_i(H_1)}")
+    st.markdown("""
+For example, an initial belief of $P_i(H_1) = 0.05$ corresponds to
+odds $O_i = 0.05 / 0.95 \\approx 0.0526$, meaning the agent considers
+$H_0$ roughly 19 times more likely than $H_1$.
+
+**Step 2 — Multiply odds by the Bayes factor.** The Bayes factor
+$\\Lambda$ quantifies the evidential strength of a single observation,
+defined as the likelihood ratio (Kass & Raftery, 1995):
+""")
+    st.latex(r"\Lambda = \frac{P(\text{evidence} \mid H_1)}{P(\text{evidence} \mid H_0)}")
+    st.markdown("""
+The posterior odds are obtained by multiplying the prior odds by the
+Bayes factor:
+""")
+    st.latex(r"O_i^{\,\text{posterior}} = O_i^{\,\text{prior}} \times \Lambda")
+    st.markdown("""
+A Bayes factor $\\Lambda > 1$ shifts belief toward $H_1$; $\\Lambda = 1$
+is uninformative; $\\Lambda < 1$ would shift toward $H_0$ (not used in
+this model, since all evidence channels are non-negative). Multiple
+independent evidence sources compose multiplicatively — if an agent
+receives evidence from channels with factors $\\Lambda_1, \\Lambda_2,
+\\ldots, \\Lambda_k$ in the same time step:
+""")
+    st.latex(r"O_i^{\,\text{posterior}} = O_i^{\,\text{prior}} \times \Lambda_1 \times \Lambda_2 \times \cdots \times \Lambda_k")
+
+    st.markdown("""
+**Step 3 — Convert posterior odds back to probability:**
+""")
+    st.latex(r"P_i^{\,\text{posterior}}(H_1) = \frac{O_i^{\,\text{posterior}}}{1 + O_i^{\,\text{posterior}}}")
+    st.markdown("""
+This three-step procedure is algebraically equivalent to the standard
+form of Bayes' theorem. Its advantage is that each evidence source is
+characterized by a single scalar (the Bayes factor), and sequential
+updates reduce to repeated multiplication in the odds domain.
+""")
+
+    st.markdown("---")
+    st.markdown("**Worked example.** Agent with $P(H_1) = 0.05$ "
+                "experiences one flood ($\\Lambda = 1.20$):")
     st.latex(r"""
-\text{posterior odds} = \text{prior odds} \times
-\underbrace{\frac{P(\text{evidence} \mid H_1)}
-{P(\text{evidence} \mid H_0)}}_{\text{Bayes factor}}
+\begin{aligned}
+O^{\text{prior}} &= \frac{0.05}{1 - 0.05} = 0.05263 \\[6pt]
+O^{\text{posterior}} &= 0.05263 \times 1.20 = 0.06316 \\[6pt]
+P^{\text{posterior}}(H_1) &= \frac{0.06316}{1 + 0.06316} = 0.05941
+\end{aligned}
 """)
     st.markdown("""
-where $\\text{odds} = P(H_1) / (1 - P(H_1))$, and the Bayes factor =
-$P(\\text{evidence} \\mid H_1) / P(\\text{evidence} \\mid H_0)$. After
-multiplying the odds, the agent converts back to probability:
-$P(H_1) = \\text{odds} / (1 + \\text{odds})$. The odds form has the
-advantage that each evidence source is characterized by a single number.
+A single flood shifts belief from 5.00% to 5.94% — a modest update
+consistent with the empirical observation that multiple flood events
+are required before households take action (Amini et al., 2025).
 """)
 
     st.subheader("3.2 &nbsp; Channel 1: Personal Flood Experience")
     st.markdown("""
-Each year, a flood level is drawn from a GEV distribution (Coles, 2001).
-If the flood level exceeds the agent's elevation, the agent is flooded
-and its odds are multiplied by $\\lambda_{\\mathrm{flood}}$. If the agent
-is not flooded, no update occurs. This asymmetric rule follows the
-availability heuristic (Tversky & Kahneman, 1974): flood events are
-psychologically salient while dry years are inert.
-
-$\\lambda_{\\mathrm{flood}}$ controls how strongly a single flood shifts
-belief. With the default value of 1.20, each flood provides a modest
-evidence boost, and agents require multiple events to reach their
-threshold.
+Each time step, a global flood level $f_t$ is drawn from a Generalized
+Extreme Value distribution (Coles, 2001). Agent $i$ with elevation $z_i$
+is flooded if $f_t > z_i$. The update rule is asymmetric, following the
+availability heuristic (Tversky & Kahneman, 1974) — flood events are
+psychologically salient while dry years are cognitively inert:
+""")
+    st.latex(r"""
+\Lambda_{\text{flood},i}^{(t)} =
+\begin{cases}
+\lambda_{\text{flood}} & \text{if } f_t > z_i \quad \text{(flooded)} \\
+1 & \text{if } f_t \leq z_i \quad \text{(not flooded; no update)}
+\end{cases}
+""")
+    st.markdown("""
+With the default $\\lambda_{\\mathrm{flood}} = 1.20$, each flood
+increases the odds by 20%. An agent must experience several floods
+before belief approaches the decision threshold, consistent with
+observed low adoption rates despite repeated flooding (Amini et al.,
+2025).
 """)
 
     st.subheader("3.3 &nbsp; Channel 2: Proximity-Based Social Learning")
     st.markdown("""
-Network connections are binary: two agents are connected if their
-Euclidean distance is within `DISTANCE_THRESHOLD`, and not connected
-otherwise. No distance decay function is applied. When an agent first
-observes that a connected neighbor has retrofitted, its odds are
-multiplied by the full $\\lambda_{\\mathrm{social}}$. Each neighbor is
-counted once (one-shot learning).
-
-This channel captures proximity-based social influence: living near
-someone who has taken action provides a direct signal about the
-appropriateness of retrofitting, regardless of how similar the two
-agents are (McPherson et al., 2001).
+Network connections are binary: agents $i$ and $j$ are connected if
+their Euclidean distance $d(i,j) \\leq$ `DISTANCE_THRESHOLD`, and
+unconnected otherwise. No distance decay function is applied. Let
+$\\mathcal{N}_i^{(t)}$ denote the set of connected neighbors of agent
+$i$ that are **newly observed** as having retrofitted at time $t$ (each
+neighbor is counted once — one-shot learning). For each
+$j \\in \\mathcal{N}_i^{(t)}$:
+""")
+    st.latex(r"\Lambda_{\text{social},j} = \lambda_{\text{social}}")
+    st.markdown("""
+This captures proximity-based social influence: living near someone who
+has taken action provides a direct signal about the appropriateness of
+retrofitting, regardless of demographic similarity (McPherson et al.,
+2001).
 """)
 
     st.subheader("3.4 &nbsp; Channel 3: Similarity-Based Social Learning")
     st.markdown("""
-Neighborhoods are identified using DBSCAN density-based clustering
-(Ester et al., 1996) applied to agent positions with the same distance
-threshold. Agents assigned to the same neighborhood share a spatial
-community. Connector agents and isolated points are labeled −1 and do
-not participate in similarity-based learning.
+Spatial neighborhoods are identified using DBSCAN density-based
+clustering (Ester et al., 1996) applied to agent positions with
+$\\varepsilon$ = `DISTANCE_THRESHOLD`. Agents in the same cluster share a
+neighborhood. Connector agents and isolated points (DBSCAN label $-1$)
+are excluded from this channel.
 
-When an agent first observes that a connected neighbor in the same
-neighborhood has retrofitted, the Jaccard similarity $S(i,j)$ between
-their attribute vectors (Jaccard, 1912) scales the Bayes factor:
+For each newly retrofitted neighbor $j$ that shares the same
+neighborhood as agent $i$, the Jaccard similarity $S(i,j)$ between their
+categorical attribute vectors (Jaccard, 1912) modulates the Bayes
+factor:
 """)
-    st.latex(r"\text{effective factor} = \lambda_{\mathrm{similarity}}^{\,S(i,j)}")
+    st.latex(r"""
+S(i,j) = \frac{\left|\{k : a_{i,k} = a_{j,k}\}\right|}{K}
+""")
     st.markdown("""
-When $S=1$ (identical attributes), the full factor is applied. When $S=0$
-(no matching attributes), the effective factor equals 1 (no update).
-This channel captures the homophily mechanism (McPherson et al., 2001):
-agents are more influenced by those who share their characteristics.
-
-The similarity channel is applied in addition to the proximity channel.
-A retrofitting neighbor who is both connected and in the same
-neighborhood triggers both updates.
+where $K$ is the total number of attributes and $a_{i,k}$ is agent $i$'s
+value for attribute $k$. The similarity-scaled Bayes factor is:
 """)
-
-    st.subheader("3.5 &nbsp; Protection Motivation Theory (Rogers, 1975)")
+    st.latex(r"\Lambda_{\text{similarity},j} = \lambda_{\text{similarity}}^{\,S(i,j)}")
     st.markdown("""
-Once $P(H_1) \\geq$ the agent's individual PMT threshold, the agent
-retrofits permanently. Thresholds are drawn from a truncated Normal
-distribution $\\mathcal{N}(\\mu, \\sigma)$ clipped to
-$[\\text{low}, \\text{high}]$. Retrofit is irreversible.
+When $S = 1$ (identical attributes), the full factor applies. When
+$S = 0$ (no shared attributes), $\\Lambda = 1$ (no update). This captures
+the homophily mechanism (McPherson et al., 2001): agents are more
+influenced by those who share their characteristics. Social learning
+rate depends on attribute similarity between agents, reflecting
+empirical patterns where households adopt behaviors of similar neighbors
+(Amini et al., 2025).
+
+**Combined social update.** A neighbor who is both connected **and** in
+the same neighborhood triggers both Channels 2 and 3 multiplicatively.
+A neighbor who is connected but in a different neighborhood triggers
+only Channel 2.
 """)
 
-    st.subheader("3.6 &nbsp; Edge Attributes")
+    st.subheader("3.5 &nbsp; Combined Update — Single Time Step")
     st.markdown("""
-Each network edge stores the Jaccard similarity
-$S(i,j) = |\\text{matching attributes}| \\,/\\, |\\text{total attributes}|$
-(Jaccard, 1912). Connections are binary: agents within
-`DISTANCE_THRESHOLD` are connected; agents beyond it are not.
-No distance decay weighting is applied to edges.
+At each time step $t$, agent $i$'s complete belief update combines all
+three channels. Let $\\mathcal{N}_i^{(t)}$ be the set of newly observed
+retrofitted neighbors, and let $\\mathcal{N}_i^{\\text{same},(t)}
+\\subseteq \\mathcal{N}_i^{(t)}$ be those in the same DBSCAN
+neighborhood. The full update is:
+""")
+    st.latex(r"""
+O_i^{(t)} = O_i^{(t-1)}
+\;\times\; \Lambda_{\text{flood},i}^{(t)}
+\;\times\; \prod_{j \in \mathcal{N}_i^{(t)}} \lambda_{\text{social}}
+\;\times\; \prod_{j \in \mathcal{N}_i^{\text{same},(t)}}
+\lambda_{\text{similarity}}^{\,S(i,j)}
+""")
+    st.markdown("""
+followed by conversion back to probability:
+$P_i^{(t)}(H_1) = O_i^{(t)} / (1 + O_i^{(t)})$.
+
+Because all Bayes factors are $\\geq 1$ and non-flood years contribute a
+factor of 1, belief is **monotonically non-decreasing** over time.
 """)
 
-    st.subheader("3.7 &nbsp; Flood Generation (Coles, 2001)")
+    st.subheader("3.6 &nbsp; Decision Rule — Protection Motivation Theory (Rogers, 1975)")
+    st.markdown("""
+Each agent $i$ has an individual decision threshold
+$\\theta_i$ drawn at initialization from a truncated Normal distribution:
+""")
+    st.latex(r"""
+\theta_i \sim \mathcal{N}(\mu_\theta,\, \sigma_\theta)
+\;\Big|_{\;\theta_{\min}}^{\;\theta_{\max}}
+""")
+    st.markdown("""
+When $P_i(H_1) \\geq \\theta_i$, the agent retrofits permanently and
+exits the learning loop. Retrofit is irreversible. Heterogeneous
+thresholds create timing diversity among agents with identical exposure
+histories, representing variation in self-efficacy and perceived
+response costs (Rogers, 1975).
+""")
+
+    st.subheader("3.7 &nbsp; Flood Generation — GEV Distribution (Coles, 2001)")
     st.markdown("""
 Annual flood levels are sampled from a Generalized Extreme Value (GEV)
-distribution fitted to user-defined return periods and flood levels
-(Hosking & Wallis, 1997). Each year, a single global flood level is
-drawn and clipped to $[0, 1]$. Agents whose elevation $z$ is below the
-flood level are flooded.
+distribution with CDF:
+""")
+    st.latex(r"""
+F(x) = \exp\!\left\{
+-\left[1 + \xi\left(\frac{x - \mu}{\sigma}\right)\right]^{-1/\xi}
+\right\}
+""")
+    st.markdown("""
+where $\\mu$ is the location parameter, $\\sigma > 0$ the scale, and
+$\\xi$ the shape. The parameters are fitted to user-defined return-period
+/ flood-level pairs via constrained optimization (Hosking & Wallis,
+1997). Each year, a single global flood level $f_t$ is drawn and clipped
+to $[0, 1]$.
 """)
 
-    st.subheader("3.8 &nbsp; Neighborhood Identification (Ester et al., 1996)")
+    st.subheader("3.8 &nbsp; Edge Attributes — Jaccard Similarity (Jaccard, 1912)")
+    st.markdown("""
+Each network edge stores the Jaccard similarity
+$S(i,j) = |\\{k : a_{i,k} = a_{j,k}\\}| / K$. Connections are binary:
+agents within `DISTANCE_THRESHOLD` are connected; agents beyond it are
+not. No distance decay weighting is applied to edges.
+""")
+
+    st.subheader("3.9 &nbsp; Neighborhood Identification — DBSCAN (Ester et al., 1996)")
     st.markdown("""
 Spatial neighborhoods are identified using DBSCAN with
-$\\varepsilon$ = `DISTANCE_THRESHOLD` and `min_samples` = `DBSCAN_MIN_SAMPLES`.
-The clustering is computed once at initialization. Agents in the same
-cluster share a neighborhood label. Agents classified as noise
-(label = −1) have no neighborhood and do not participate in
-similarity-based learning. These are typically connector agents
-bridging two neighborhoods.
+$\\varepsilon$ = `DISTANCE_THRESHOLD` and `min_samples` =
+`DBSCAN_MIN_SAMPLES`. The clustering is computed once at initialization.
+Agents in the same cluster share a neighborhood label. Agents classified
+as noise (label = $-1$) have no neighborhood and do not participate in
+similarity-based learning. These are typically connector agents bridging
+two neighborhoods.
 """)
 
-    # --- 3. Architecture ---
-    st.markdown('<div class="doc-section-header">4 &nbsp; Architecture</div>',
+    # --- 4. Model Workflow Flowchart ---
+    st.markdown('<div class="doc-section-header">4 &nbsp; Model Workflow</div>',
+                unsafe_allow_html=True)
+    st.markdown("""
+The following flowchart summarizes the initialization procedure and the
+annual time-step loop executed by the model.
+""")
+    st.graphviz_chart(r'''
+    digraph workflow {
+        graph [
+            rankdir=TB, fontname="Helvetica", fontsize=13,
+            bgcolor="transparent", pad=0.4, nodesep=0.4, ranksep=0.55
+        ];
+        node [
+            shape=box, style="rounded,filled", fontname="Helvetica",
+            fontsize=10, fillcolor="#EBF5FB", color="#1B4F72",
+            penwidth=1.4, margin="0.18,0.10"
+        ];
+        edge [fontname="Helvetica", fontsize=9, color="#2E86C1",
+              penwidth=1.2, arrowsize=0.8];
+
+        /* ---- Initialization ---- */
+        subgraph cluster_init {
+            label=<<B>Initialization (once at t = 0)</B>>;
+            labeljust=l; fontname="Helvetica"; fontsize=12;
+            style="dashed,rounded"; color="#1B4F72";
+            bgcolor="#F8F9F9"; penwidth=1.0;
+
+            S  [label="Generate Agent\nPositions & Elevations\n(FFF_spatial.py)"];
+            A  [label="Generate Agent\nCategorical Attributes\n(FFF_attributes.py)"];
+            N  [label="DBSCAN Neighborhood\nIdentification\n(FFF_neighborhood.py)"];
+            G  [label="Build Binary Social Network\nEdges where d(i,j) ≤ threshold\n(FFF_network.py)"];
+            AG [label="Create Agents\nSet P(H₁)₀ , draw θᵢ ~ N(μ,σ)"];
+            FL [label="Fit GEV Distribution\nto Return-Period Pairs\n(FFF_flood.py)"];
+
+            S -> A -> N -> G -> AG -> FL;
+        }
+
+        /* ---- Annual loop ---- */
+        subgraph cluster_loop {
+            label=<<B>Annual Time-Step Loop (t = 1, 2, …, T)</B>>;
+            labeljust=l; fontname="Helvetica"; fontsize=12;
+            style="dashed,rounded"; color="#1B4F72";
+            bgcolor="#FDFEFE"; penwidth=1.0;
+
+            F1 [label=<<B>Sample Flood Level</B><BR/>f<SUB>t</SUB> ~ GEV(μ, σ, ξ), clip to [0,1]>,
+                fillcolor="#D6EAF8"];
+            C1 [label=<<B>Channel 1 — Flood Experience</B><BR/>If f<SUB>t</SUB> &gt; z<SUB>i</SUB> : odds × λ<SUB>flood</SUB><BR/>Else: no update>,
+                fillcolor="#FADBD8"];
+            C2 [label=<<B>Channel 2 — Proximity Learning</B><BR/>For each new retrofitted neighbor j:<BR/>odds × λ<SUB>social</SUB>>,
+                fillcolor="#D5F5E3"];
+            C3 [label=<<B>Channel 3 — Similarity Learning</B><BR/>If same DBSCAN neighborhood:<BR/>odds × λ<SUB>similarity</SUB><SUP> S(i,j)</SUP>>,
+                fillcolor="#FEF9E7"];
+            CV [label=<<B>Convert Back to Probability</B><BR/>P(H₁) = O / (1 + O)>,
+                fillcolor="#EBF5FB"];
+            DEC [label=<<B>Decision Rule (PMT)</B><BR/>If P(H₁) ≥ θ<SUB>i</SUB> → Retrofit permanently>,
+                 fillcolor="#E8DAEF"];
+            DC [label="Collect Data\n(agent-level & model-level metrics)",
+                fillcolor="#EBF5FB"];
+
+            F1 -> C1 -> C2 -> C3 -> CV -> DEC -> DC;
+        }
+
+        /* ---- Connections ---- */
+        FL  -> F1  [style=bold, label="  begin loop ", color="#E67E22",
+                     penwidth=1.6];
+        DC  -> F1  [style=dashed, label=" next t  ", color="#7F8C8D",
+                     constraint=false];
+
+        /* ---- Output ---- */
+        OUT [label=<<B>Outputs</B><BR/>Adoption curves · Belief evolution<BR/>Network maps · Exported CSV>,
+             fillcolor="#D4E6F1", shape=box, style="rounded,filled"];
+        DC  -> OUT [style=bold, label="  t = T (end) ", color="#E67E22",
+                     penwidth=1.6];
+    }
+    ''', use_container_width=True)
+
+    # --- 5. Architecture ---
+    st.markdown('<div class="doc-section-header">5 &nbsp; Architecture</div>',
                 unsafe_allow_html=True)
     st.markdown("""
 | File | Description |
@@ -498,11 +685,11 @@ Helper modules have no module-level defaults; all values are passed from
 the main file.*
 """)
 
-    # --- 4. How It Works ---
-    st.markdown('<div class="doc-section-header">5 &nbsp; How It Works</div>',
+    # --- 6. How It Works ---
+    st.markdown('<div class="doc-section-header">6 &nbsp; How It Works</div>',
                 unsafe_allow_html=True)
 
-    st.subheader("5.1 &nbsp; Initialization")
+    st.subheader("6.1 &nbsp; Initialization")
     st.markdown("""
 1. Generate agent positions and elevations (`FFF_spatial.py`).
 2. Generate agent attributes (`FFF_attributes.py`).
@@ -515,7 +702,7 @@ the main file.*
 6. Fit GEV distribution to return period / flood level pairs (`FFF_flood.py`).
 """)
 
-    st.subheader("5.2 &nbsp; Each Time Step (Year)")
+    st.subheader("6.2 &nbsp; Each Time Step (Year)")
     st.markdown("""
 1. Sample annual flood level from GEV (Coles, 2001), clipped to [0, 1].
 2. **Channel 1 (personal):** Each non-retrofitted agent checks whether
@@ -531,8 +718,8 @@ the main file.*
 5. Data collection: agent-level and model-level metrics recorded.
 """)
 
-    # --- 5. Understanding the Bayes Factors ---
-    st.markdown('<div class="doc-section-header">6 &nbsp; Understanding the Bayes Factors</div>',
+    # --- 7. Understanding the Bayes Factors ---
+    st.markdown('<div class="doc-section-header">7 &nbsp; Understanding the Bayes Factors</div>',
                 unsafe_allow_html=True)
     st.markdown("""
 Each evidence channel has a Bayes factor that measures how much the
@@ -550,8 +737,8 @@ both Channels 2 and 3. A neighbor who is connected but in a different
 neighborhood (or a connector agent) triggers only Channel 2.
 """)
 
-    # --- 6. Key Properties ---
-    st.markdown('<div class="doc-section-header">7 &nbsp; Key Properties</div>',
+    # --- 8. Key Properties ---
+    st.markdown('<div class="doc-section-header">8 &nbsp; Key Properties</div>',
                 unsafe_allow_html=True)
     st.markdown("""
 **Three separable evidence channels.** Flood experience, proximity, and
@@ -574,11 +761,11 @@ All three channels can only increase belief (all Bayes factors ≥ 1).
 same exposure may adopt at different times due to individual PMT thresholds.
 """)
 
-    # --- 7. Parameters ---
-    st.markdown('<div class="doc-section-header">8 &nbsp; Parameters</div>',
+    # --- 9. Parameters ---
+    st.markdown('<div class="doc-section-header">9 &nbsp; Parameters</div>',
                 unsafe_allow_html=True)
 
-    st.subheader("8.1 &nbsp; Bayesian Belief Parameters")
+    st.subheader("9.1 &nbsp; Bayesian Belief Parameters")
     st.markdown("""
 | Parameter | Default | Description |
 |:---|:---:|:---|
@@ -588,7 +775,7 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | `LAMBDA_SIMILARITY` | 3.00 | Ch.3: Bayes factor at full Jaccard similarity ($S=1$). Scaled: effective = $\\lambda^{S(i,j)}$. |
 """)
 
-    st.subheader("8.2 &nbsp; PMT Threshold Parameters (Rogers, 1975)")
+    st.subheader("9.2 &nbsp; PMT Threshold Parameters (Rogers, 1975)")
     st.markdown("""
 | Parameter | Default | Description |
 |:---|:---:|:---|
@@ -598,7 +785,7 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | `PMT_THRESHOLD_HIGH` | 0.50 | Hard upper bound (truncation). |
 """)
 
-    st.subheader("8.3 &nbsp; Network, Neighborhood & Spatial Parameters")
+    st.subheader("9.3 &nbsp; Network, Neighborhood & Spatial Parameters")
     st.markdown("""
 | Parameter | Default | Description |
 |:---|:---:|:---|
@@ -610,8 +797,8 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | `SLOPE` | 1.0 | Elevation gradient. $z = \\text{slope} \\times x$. |
 """)
 
-    # --- 8. Modes of Operation ---
-    st.markdown('<div class="doc-section-header">9 &nbsp; Modes of Operation</div>',
+    # --- 10. Modes of Operation ---
+    st.markdown('<div class="doc-section-header">10 &nbsp; Modes of Operation</div>',
                 unsafe_allow_html=True)
 
     col_r, col_c = st.columns(2)
@@ -635,8 +822,8 @@ Designed for application to a specific site. Upload:
   per time step. If not provided, GEV generation is used.
 """)
 
-    # --- 9. CSV Format ---
-    st.markdown('<div class="doc-section-header">10 &nbsp; Case Study Mode — CSV Format</div>',
+    # --- 11. CSV Format ---
+    st.markdown('<div class="doc-section-header">11 &nbsp; Case Study Mode — CSV Format</div>',
                 unsafe_allow_html=True)
 
     col_loc, col_fld = st.columns(2)
@@ -647,8 +834,8 @@ Designed for application to a specific site. Upload:
         st.markdown("**Flood time series** (optional):")
         st.code("flood_level\n0.02\n0.00\n0.08\n...", language="csv")
 
-    # --- 10. References ---
-    st.markdown('<div class="doc-section-header">11 &nbsp; References</div>',
+    # --- 12. References ---
+    st.markdown('<div class="doc-section-header">12 &nbsp; References</div>',
                 unsafe_allow_html=True)
     st.markdown("""
 - Amini, E., Madajewicz, M., Orton, P., Srikrishnan, V., & Yanez Mena, P. (2025). Social Learning and Flood Adaptation via an Agent-Based Model. Poster presented at AGU Fall Meeting 2025, Washington, D.C.
@@ -913,8 +1100,8 @@ def make_figures(model):
     fig.tight_layout(w_pad=3)
     figs["belief"] = fig
 
-    # --- Figure 4: LARGE Network map (full width) ---
-    fig, ax1 = plt.subplots(figsize=(13, 9))
+    # --- Figure 4: Network map (full width, compact height) ---
+    fig, ax1 = plt.subplots(figsize=(12, 6.5))
 
     segs = []
     for u, v in model.G.edges():
@@ -1182,27 +1369,29 @@ st.markdown("""
     <span class="affiliation">Center for Climate Systems Research (CCSR),
     Columbia University</span><br><br>
     <div class="license-box">
-        <strong>MIT License</strong><br><br>
+        <strong>License — Creative Commons Attribution 4.0 International
+        (CC BY 4.0)</strong><br><br>
         Copyright © 2025 Erfan Amini<br><br>
-        Permission is hereby granted, free of charge, to any person
-        obtaining a copy of this software and associated documentation
-        files (the "Software"), to deal in the Software without
-        restriction, including without limitation the rights to use,
-        copy, modify, merge, publish, distribute, sublicense, and/or
-        sell copies of the Software, and to permit persons to whom the
-        Software is furnished to do so, subject to the following
-        conditions:<br><br>
-        The above copyright notice and this permission notice shall be
-        included in all copies or substantial portions of the
-        Software.<br><br>
-        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-        EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
-        OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-        NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-        HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-        WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-        FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-        OTHER DEALINGS IN THE SOFTWARE.
+        This work is licensed under the Creative Commons Attribution 4.0
+        International License. You are free to share, copy, redistribute,
+        adapt, remix, transform, and build upon this material for any
+        purpose, including commercial, under the following terms:<br><br>
+        <strong>Attribution Required.</strong> You must give appropriate
+        credit by citing the following reference in any publication,
+        presentation, software, or derivative work that uses this
+        model:<br><br>
+        <em>Amini, E., Madajewicz, M., Orton, P., Srikrishnan, V.,
+        &amp; Yanez Mena, P. (2025). Social Learning and Flood Adaptation
+        via an Agent-Based Model. Poster presented at AGU Fall Meeting
+        2025, Washington, D.C.</em><br><br>
+        You must also indicate if changes were made. You may do so in any
+        reasonable manner, but not in any way that suggests the licensor
+        endorses you or your use.<br><br>
+        Full license text:
+        <a href="https://creativecommons.org/licenses/by/4.0/"
+           target="_blank" style="color: #2E86C1;">
+           https://creativecommons.org/licenses/by/4.0/</a><br><br>
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
     </div>
 </div>
 """, unsafe_allow_html=True)
