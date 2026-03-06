@@ -30,6 +30,76 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
+# Custom CSS styling
+# ---------------------------------------------------------------------------
+st.markdown("""
+<style>
+/* ---- Sidebar ---- */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #F0F4F8 0%, #E2ECF5 100%);
+}
+[data-testid="stSidebar"] h1 {
+    color: #2E75B6;
+    font-size: 1.5rem;
+}
+[data-testid="stSidebar"] h2 {
+    color: #1A5A96;
+    border-bottom: 2px solid #0EA5E9;
+    padding-bottom: 0.3rem;
+    font-size: 1.1rem;
+}
+
+/* ---- Tabs ---- */
+button[data-baseweb="tab"] {
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    border-bottom-color: #2E75B6 !important;
+    color: #2E75B6 !important;
+}
+
+/* ---- Metric cards ---- */
+[data-testid="stMetric"] {
+    background: linear-gradient(135deg, #F8FBFF, #EBF3FB);
+    border: 1px solid #D0DEF0;
+    border-left: 4px solid #2E75B6;
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+[data-testid="stMetric"] label {
+    color: #1A5A96 !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    color: #2E75B6 !important;
+    font-weight: 700;
+}
+
+/* ---- Headers ---- */
+.main h1 { color: #2E75B6; }
+.main h2 { color: #1A5A96; border-bottom: 1px solid #D0DEF0; padding-bottom: 0.3rem; }
+.main h3 { color: #0E6BA8; }
+
+/* ---- Primary button ---- */
+button[kind="primary"], .stButton > button[kind="primary"] {
+    background: linear-gradient(90deg, #2E75B6, #0EA5E9) !important;
+    border: none !important;
+    font-weight: 600;
+    color: white !important;
+}
+
+/* ---- Dividers ---- */
+hr { border-color: #D0DEF0 !important; }
+
+/* ---- Alert boxes ---- */
+[data-testid="stAlert"] {
+    border-radius: 8px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
 # Import model modules
 # ---------------------------------------------------------------------------
 sys.path.insert(0, os.path.dirname(__file__))
@@ -92,12 +162,20 @@ st.sidebar.header("Bayesian Updating")
 
 initial_belief = st.sidebar.slider(
     "Initial Belief $P(H_1)$", 0.01, 0.50, 0.05, 0.01)
+st.sidebar.markdown("**Channel 1: Personal Flood Experience**")
 lambda_flood = st.sidebar.slider(
-    "$\\lambda_{\\mathrm{flood}}$ (Ch.1)", 1.0, 3.0, 1.20, 0.01)
+    "$\\lambda_{\\mathrm{flood}}$", 1.0, 3.0, 1.20, 0.01,
+    help="Bayes factor applied when an agent is personally flooded.")
+
+st.sidebar.markdown("**Channel 2: Proximity-Based Social Learning**")
 lambda_social = st.sidebar.slider(
-    "$\\lambda_{\\mathrm{social}}$ (Ch.2)", 1.0, 5.0, 1.50, 0.01)
+    "$\\lambda_{\\mathrm{social}}$", 1.0, 5.0, 1.50, 0.01,
+    help="Bayes factor applied when a connected neighbor retrofits.")
+
+st.sidebar.markdown("**Channel 3: Similarity-Based Social Learning**")
 lambda_similarity = st.sidebar.slider(
-    "$\\lambda_{\\mathrm{similarity}}$ (Ch.3)", 1.0, 10.0, 3.00, 0.1)
+    "$\\lambda_{\\mathrm{similarity}}$", 1.0, 10.0, 3.00, 0.1,
+    help="Base Bayes factor scaled by Jaccard similarity within neighborhoods.")
 
 st.sidebar.divider()
 st.sidebar.header("PMT Threshold")
@@ -136,6 +214,22 @@ if mode == "Case Study Mode":
 # MAIN TABS
 # ============================================================================
 
+# ---------------------------------------------------------------------------
+# Main title and subtitle
+# ---------------------------------------------------------------------------
+st.markdown("""
+<div style="text-align:center; padding: 1.2rem 0 0.6rem 0;">
+    <h1 style="margin:0; font-size:2.4rem; color:#2E75B6; border:none;">
+        Flood Adaptation Agent-Based Model
+    </h1>
+    <p style="margin:0.3rem 0 0 0; font-size:1.15rem; color:#555; font-style:italic;">
+        Bayesian Belief Updating with Three Evidence Channels
+    </p>
+    <hr style="margin:0.8rem auto 0 auto; width:60%; border:none;
+               height:3px; background: linear-gradient(90deg, #2E75B6, #0EA5E9, #10B981);">
+</div>
+""", unsafe_allow_html=True)
+
 tab_doc, tab_settings, tab_sim, tab_results = st.tabs(
     ["Documentation", "Advanced Settings", "Run Simulation", "Results"])
 
@@ -145,9 +239,6 @@ tab_doc, tab_settings, tab_sim, tab_results = st.tabs(
 # ============================================================================
 
 with tab_doc:
-    st.title("Flood Adaptation Agent-Based Model")
-    st.markdown("*Bayesian Belief Updating with Three Evidence Channels*")
-
     st.header("1. Purpose")
     st.markdown("""
 This model simulates how households in flood-prone areas decide whether
@@ -197,6 +288,14 @@ equivalent to the standard formulation of Bayes' theorem.
 """)
 
     st.header("4. Three Evidence Channels")
+
+    st.markdown("""
+| Channel | Parameter | Mechanism | Scope |
+|:---:|:---:|---|---|
+| 1 | $\\lambda_{\\mathrm{flood}}$ | Personal flood experience multiplies odds | Individual agent |
+| 2 | $\\lambda_{\\mathrm{social}}$ | Observing a connected neighbor retrofit | Binary network edges |
+| 3 | $\\lambda_{\\mathrm{similarity}}$ | Similarity-scaled learning within neighborhoods | DBSCAN clusters |
+""")
 
     st.subheader("Channel 1: Personal Flood Experience")
     st.markdown("""
@@ -299,6 +398,24 @@ Channels 2 and 3. A neighbor who is connected but in a different
 neighborhood triggers only Channel 2.
 """)
 
+    st.subheader("Worked Example")
+    st.markdown("""
+Consider an agent with initial belief $P(H_1) = 0.05$ and
+$\\lambda_{\\mathrm{flood}} = 1.5$, $\\lambda_{\\mathrm{social}} = 2.0$,
+threshold $= 0.50$.
+
+| Step | Event | Prior Odds | Bayes Factor | Posterior Odds | $P(H_1)$ |
+|:---:|---|:---:|:---:|:---:|:---:|
+| 0 | Initial state | 0.0526 | -- | 0.0526 | 0.050 |
+| 1 | Flooded | 0.0526 | 1.50 | 0.0789 | 0.073 |
+| 2 | Safe (no update) | 0.0789 | 1.00 | 0.0789 | 0.073 |
+| 3 | Flooded + neighbor retrofits | 0.0789 | 1.50 x 2.00 = 3.00 | 0.2368 | 0.191 |
+
+The agent has not yet reached the threshold of 0.50, so it has not
+retrofitted. Note how a single step with multiple evidence sources
+(flood + social) produces a compound update.
+""")
+
     st.header("9. Key Properties")
     st.markdown("""
 - **Three separable channels.** Each can be disabled by setting its
@@ -310,6 +427,154 @@ neighborhood triggers only Channel 2.
   belief never drops.
 - **Heterogeneous thresholds** create timing diversity among agents
   with identical exposure.
+""")
+
+    st.header("10. Model Architecture and Flow")
+    st.markdown("""
+The model proceeds in two phases: **initialization** and **stepping**.
+
+**Initialization:**
+1. **Spatial placement** -- Agents are assigned $(x, y)$ positions via grid layout,
+   random placement, or uploaded CSV.
+2. **Elevation assignment** -- Elevation $z$ follows a linear gradient
+   ($z = \\text{slope} \\times x$) with optional Gaussian noise, or is read from CSV.
+3. **Attribute assignment** -- Each agent receives a vector of categorical attributes
+   (e.g., income class, housing type) used for Jaccard similarity.
+4. **Network construction** -- Binary edges are created between agents within the
+   Euclidean distance threshold. No distance decay is applied.
+5. **Neighborhood detection** -- DBSCAN clusters agents into spatial neighborhoods.
+   Noise points (connectors) are excluded from similarity-based learning.
+6. **Belief initialization** -- All agents start with the same prior $P(H_1)$.
+   Individual PMT thresholds are drawn (homogeneous or truncated Normal).
+
+**Step Loop (repeated for each time step):**
+1. Draw a global flood level from the GEV distribution (or uploaded series).
+2. **Channel 1**: Each agent with $z <$ flood level is flooded; odds $\\times \\lambda_{\\mathrm{flood}}$.
+3. **Channel 2**: Each agent checks connected neighbors for new retrofits;
+   odds $\\times \\lambda_{\\mathrm{social}}$ per newly observed retrofit.
+4. **Channel 3**: Within DBSCAN neighborhoods, each agent checks neighbors for
+   new retrofits; effective factor $= \\lambda_{\\mathrm{similarity}}^{S(i,j)}$.
+5. **Decision**: If $P(H_1) \\geq$ threshold, the agent retrofits permanently.
+6. Record step-level statistics (mean belief, retrofit count, flood level).
+""")
+
+    st.header("11. Parameter Sensitivity Guide")
+    st.markdown("""
+| Parameter | Range | Default | Effect |
+|---|:---:|:---:|---|
+| $\\lambda_{\\mathrm{flood}}$ | 1.0 -- 3.0 | 1.20 | Higher values accelerate belief growth from personal flood experience. Most direct driver of low-elevation adoption. |
+| $\\lambda_{\\mathrm{social}}$ | 1.0 -- 5.0 | 1.50 | Higher values amplify social contagion through network connections. Creates cascading adoption waves. |
+| $\\lambda_{\\mathrm{similarity}}$ | 1.0 -- 10.0 | 3.00 | Higher values strengthen homophily-driven learning. Effect is modulated by Jaccard similarity $S(i,j)$. |
+| Initial Belief $P(H_1)$ | 0.01 -- 0.50 | 0.05 | Higher prior beliefs bring agents closer to threshold from the start. |
+| PMT Threshold | 0.10 -- 0.90 | 0.50 | Lower thresholds make agents retrofit sooner; higher thresholds require more evidence. |
+| Threshold Std Dev | 0.00 -- 0.20 | 0.00 | Positive values create agent heterogeneity, producing gradual adoption curves rather than sharp jumps. |
+| Distance Threshold | 0.01 -- 0.30 | 0.09 | Larger values create denser networks with more connections, amplifying Channel 2. |
+| DBSCAN Min Samples | 2 -- 10 | 4 | Lower values create more (smaller) neighborhoods; higher values require denser clusters. |
+| Elevation Slope | 0.0 -- 2.0 | 0.20 | Steeper slopes create greater elevation variation, differentiating flood exposure across agents. |
+| Number of Agents | 20 -- 1000 | 200 | More agents provide smoother statistics but increase computation time. |
+
+**Recommended exploration order:** Start by varying $\\lambda_{\\mathrm{flood}}$ and the PMT
+threshold to understand individual-level dynamics. Then adjust
+$\\lambda_{\\mathrm{social}}$ and the distance threshold to explore social contagion.
+Finally, vary $\\lambda_{\\mathrm{similarity}}$, attributes, and DBSCAN settings
+to investigate homophily effects.
+""")
+
+    st.header("12. Output Interpretation Guide")
+    st.markdown("""
+**Figure 1 -- Adoption and Flood History:**
+- *Panel (a)*: The retrofit adoption curve shows the cumulative percentage of
+  agents who have retrofitted over time. An S-shaped curve suggests social
+  contagion amplifying initial flood-driven adoption. A step-function pattern
+  indicates adoption triggered by specific large flood events. A slow linear
+  rise suggests weak evidence accumulation.
+- *Panel (b)*: Flood levels drawn from the GEV distribution. The red dashed line
+  shows the mean. Occasional spikes above the mean represent extreme events
+  that flood many agents simultaneously.
+
+**Figure 2 -- Elevation and Observed Comparison:**
+- *Panel (a)*: Adoption rates by elevation tercile. Low-elevation agents should
+  retrofit more frequently because they are flooded more often. If medium or
+  high terciles show comparable rates, social learning is dominant.
+- *Panel (b)*: Model predictions vs. observed data (if provided). Alignment
+  indicates good calibration; systematic over- or under-prediction suggests
+  parameter adjustment is needed.
+
+**Figure 3 -- Belief Evolution:**
+- *Panel (a)*: Mean belief trajectory with the 10th--90th percentile band.
+  The red dashed line marks the decision threshold. When the mean belief
+  crosses the threshold, approximately half the agents have retrofitted.
+- *Panel (b)*: Histogram of final beliefs. A bimodal distribution (peaks near 0
+  and near 1) indicates clear separation between convinced and unconvinced agents.
+
+**Figure 4 -- Network and Similarity:**
+- *Panel (a)*: Social network layout. Node color indicates retrofit status
+  (gray = not retrofitted, green shades = retrofitted, colored by timing).
+  Numbers inside nodes show each agent's personal flood count. Clusters of
+  green nodes indicate social contagion effects.
+- *Panel (b)*: Distribution of Jaccard similarities across all network edges.
+  Higher mean similarity amplifies Channel 3 effects.
+
+**Figure 5 -- Spatial Map:**
+- Elevation-colored scatter plot with green overlay for retrofitted agents.
+  Look for spatial clustering of adoption in low-elevation zones and along
+  network-connected corridors.
+""")
+
+    with st.expander("13. Glossary of Terms"):
+        st.markdown("""
+| Term | Definition |
+|---|---|
+| **Agent** | A simulated household that holds a belief, makes decisions, and interacts with neighbors. |
+| **Availability Heuristic** | Cognitive bias where vivid events (floods) are weighted more heavily than non-events (safe years). |
+| **Bayes Factor** | The likelihood ratio $P(\\text{evidence} \\mid H_1) / P(\\text{evidence} \\mid H_0)$; measures evidential strength. |
+| **Belief** | The agent's subjective probability $P(H_1)$ that its situation warrants retrofitting. |
+| **Channel** | One of three independent evidence pathways that update an agent's belief. |
+| **Connector Agent** | A bridge agent placed between grid neighborhoods; classified as noise by DBSCAN. |
+| **DBSCAN** | Density-Based Spatial Clustering of Applications with Noise; groups nearby agents into neighborhoods. |
+| **GEV Distribution** | Generalized Extreme Value distribution; models the probability of rare flood events. |
+| **Homophily** | The tendency for similar individuals to influence each other more strongly. |
+| **Jaccard Similarity** | $S(i,j) = |A_i \\cap A_j| / |A_i \\cup A_j|$; measures attribute overlap between two agents. |
+| **Neighborhood** | A spatial cluster identified by DBSCAN within which similarity-based learning operates. |
+| **Odds Form** | $\\text{odds} = P(H_1) / (1 - P(H_1))$; multiplicative updates are natural in this form. |
+| **PMT Threshold** | Protection Motivation Theory threshold; the belief level at which an agent decides to retrofit. |
+| **Posterior** | The updated belief after incorporating new evidence. |
+| **Prior** | The belief before incorporating new evidence. |
+| **Retrofit** | A permanent protective action taken by an agent once its belief crosses the threshold. |
+| **Return Period** | The average time between flood events of a given magnitude (e.g., 100-year flood). |
+""")
+
+    with st.expander("14. References"):
+        st.markdown("""
+- Coles, S. (2001). *An Introduction to Statistical Modeling of Extreme Values*.
+  Springer Series in Statistics. Springer-Verlag London.
+
+- Ester, M., Kriegel, H.-P., Sander, J., & Xu, X. (1996). A density-based
+  algorithm for discovering clusters in large spatial databases with noise.
+  In *Proceedings of the 2nd International Conference on Knowledge Discovery
+  and Data Mining (KDD-96)*, pp. 226--231. AAAI Press.
+
+- Jaccard, P. (1912). The distribution of the flora in the alpine zone.
+  *New Phytologist*, 11(2), 37--50.
+
+- Jaynes, E. T. (2003). *Probability Theory: The Logic of Science*.
+  Cambridge University Press.
+
+- Kass, R. E., & Raftery, A. E. (1995). Bayes factors. *Journal of the
+  American Statistical Association*, 90(430), 773--795.
+
+- Kazil, J., Masad, D., & Crooks, A. (2020). Utilizing Python for
+  agent-based modeling: The Mesa framework. In *Social, Cultural, and
+  Behavioral Modeling (SBP-BRiMS 2020)*, pp. 308--317. Springer.
+
+- McPherson, M., Smith-Lovin, L., & Cook, J. M. (2001). Birds of a feather:
+  Homophily in social networks. *Annual Review of Sociology*, 27, 415--444.
+
+- Rogers, R. W. (1975). A protection motivation theory of fear appeals and
+  attitude change. *Journal of Psychology*, 91(1), 93--114.
+
+- Tversky, A., & Kahneman, D. (1974). Judgment under uncertainty: Heuristics
+  and biases. *Science*, 185(4157), 1124--1131.
 """)
 
 
@@ -536,7 +801,8 @@ def make_figures(model):
     figs["belief"] = fig
 
     # --- Figure 4: Network + Similarity (2 subplots) ---
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 7),
+                                    gridspec_kw={"width_ratios": [1.6, 1]})
 
     # Network with flood count labels
     segs = []
@@ -548,14 +814,14 @@ def make_figures(model):
             segs, linewidths=0.3, colors="gray", alpha=0.2, zorder=1))
     adopted = [a for a in agents if a.is_retrofitted]
     not_adopted = [a for a in agents if not a.is_retrofitted]
-    node_size = max(40, min(250, 8000 // max(len(agents), 1)))
+    node_size = max(50, min(300, 10000 // max(len(agents), 1)))
     if not_adopted:
         ax1.scatter([a.x for a in not_adopted], [a.y for a in not_adopted],
                     c="lightgray", s=node_size, edgecolor="black",
                     linewidth=0.5, zorder=2)
         for a in not_adopted:
             ax1.text(a.x, a.y, str(a.flood_count), ha="center", va="center",
-                     fontsize=max(5, min(7, 1400//max(len(agents),1))),
+                     fontsize=max(7, min(10, 2200//max(len(agents),1))),
                      fontweight="bold", zorder=3)
     if adopted:
         sc = ax1.scatter([a.x for a in adopted], [a.y for a in adopted],
@@ -566,7 +832,7 @@ def make_figures(model):
             "Retrofit Step", fontsize=FS-2)
         for a in adopted:
             ax1.text(a.x, a.y, str(a.flood_count), ha="center", va="center",
-                     fontsize=max(5, min(7, 1400//max(len(agents),1))),
+                     fontsize=max(7, min(10, 2200//max(len(agents),1))),
                      fontweight="bold", zorder=3)
     ax1.set(xlabel="$x$", ylabel="$y$",
             title="(a) Social Network",
@@ -590,7 +856,7 @@ def make_figures(model):
     figs["network_sim"] = fig
 
     # --- Figure 5: Spatial map ---
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(6, 4.5))
     segs2 = []
     for u, v in model.G.edges():
         a_u, a_v = model.agents_by_node[u], model.agents_by_node[v]
@@ -752,7 +1018,9 @@ with tab_results:
         st.pyplot(figs["network_sim"])
 
         st.header("Spatial Map")
-        st.pyplot(figs["spatial"])
+        col_sp, _ = st.columns([2, 1])
+        with col_sp:
+            st.pyplot(figs["spatial"])
 
         # Export
         st.divider()
