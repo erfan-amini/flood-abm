@@ -202,6 +202,37 @@ button[kind="primary"] {
 
 
 # ---------------------------------------------------------------------------
+# Password gate
+# ---------------------------------------------------------------------------
+APP_PASSWORD = "NY2026VA"
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.markdown("""
+    <div style="display:flex; justify-content:center; align-items:center;
+                min-height:60vh;">
+        <div style="text-align:center; max-width:400px;">
+            <h2 style="color:#1B4F72;">🌊 Flood Adaptation ABM</h2>
+            <p style="color:#5D6D7E;">Enter the access code to continue.</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    col_l, col_m, col_r = st.columns([1, 2, 1])
+    with col_m:
+        pwd = st.text_input("Access Code", type="password",
+                            placeholder="Enter code")
+        if st.button("Enter", type="primary", use_container_width=True):
+            if pwd == APP_PASSWORD:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect code. Please try again.")
+    st.stop()
+
+
+# ---------------------------------------------------------------------------
 # Import model modules
 # ---------------------------------------------------------------------------
 sys.path.insert(0, os.path.dirname(__file__))
