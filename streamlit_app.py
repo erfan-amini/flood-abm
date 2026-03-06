@@ -262,13 +262,13 @@ initial_belief = st.sidebar.slider(
     "Initial Belief  —  $P(H_1)$", 0.01, 0.50, 0.05, 0.01)
 lambda_flood = st.sidebar.slider(
     "Flood Experience  —  $\\lambda_{\\mathrm{flood}}$",
-    1.0, 3.0, 1.20, 0.01)
+    1.0, 3.0, 1.25, 0.01)
 lambda_social = st.sidebar.slider(
     "Proximity Learning  —  $\\lambda_{\\mathrm{social}}$",
-    1.0, 5.0, 1.50, 0.01)
+    1.0, 5.0, 1.20, 0.01)
 lambda_similarity = st.sidebar.slider(
     "Similarity Learning  —  $\\lambda_{\\mathrm{similarity}}$",
-    1.0, 10.0, 3.00, 0.1)
+    1.0, 10.0, 2.50, 0.1)
 
 st.sidebar.divider()
 st.sidebar.header("🎯 PMT Threshold")
@@ -289,6 +289,14 @@ else:
     pmt_std = st.sidebar.slider("Std Dev", 0.00, 0.20, 0.00, 0.01)
     pmt_low = st.sidebar.slider("Lower Bound", 0.10, 0.90, 0.50, 0.01)
     pmt_high = st.sidebar.slider("Upper Bound", 0.10, 0.95, 0.50, 0.01)
+
+# --- Agent Attributes (sidebar) ---
+st.sidebar.divider()
+st.sidebar.header("🧬 Agent Attributes")
+enable_het = st.sidebar.checkbox("Attribute Heterogeneity", value=True,
+    help="If off, all agents are identical (S=1 for all pairs).")
+n_attributes = st.sidebar.number_input("Attributes per Agent", 1, 10, 2)
+n_classes = st.sidebar.number_input("Classes per Attribute", 1, 10, 3)
 
 # --- Case Study file uploads ---
 uploaded_csv = None
@@ -437,8 +445,8 @@ psychologically salient while dry years are cognitively inert:
 \end{cases}
 """)
     st.markdown("""
-With the default $\\lambda_{\\mathrm{flood}} = 1.20$, each flood
-increases the odds by 20%. An agent must experience several floods
+With the default $\\lambda_{\\mathrm{flood}} = 1.25$, each flood
+increases the odds by 25%. An agent must experience several floods
 before belief approaches the decision threshold, consistent with
 observed low adoption rates despite repeated flooding (Amini et al.,
 2025).
@@ -585,73 +593,71 @@ annual time-step loop executed by the model.
     st.graphviz_chart(r'''
     digraph workflow {
         graph [
-            rankdir=TB, fontname="Helvetica", fontsize=10,
-            bgcolor="transparent", pad=0.2, nodesep=0.25, ranksep=0.35,
-            size="6.5,7.5", ratio="compress"
+            rankdir=LR, fontname="Helvetica", fontsize=11,
+            bgcolor="transparent", pad=0.3, nodesep=0.3, ranksep=0.4
         ];
         node [
             shape=box, style="rounded,filled", fontname="Helvetica",
-            fontsize=8, fillcolor="#EBF5FB", color="#1B4F72",
-            penwidth=1.0, margin="0.12,0.06"
+            fontsize=9, fillcolor="#EBF5FB", color="#1B4F72",
+            penwidth=1.2, margin="0.14,0.07"
         ];
-        edge [fontname="Helvetica", fontsize=7, color="#2E86C1",
-              penwidth=0.9, arrowsize=0.6];
+        edge [fontname="Helvetica", fontsize=8, color="#2E86C1",
+              penwidth=1.0, arrowsize=0.7];
 
-        /* ---- Initialization ---- */
+        /* ---- Initialization (vertical column) ---- */
         subgraph cluster_init {
-            label=<<B>Initialization (once at t = 0)</B>>;
-            labeljust=l; fontname="Helvetica"; fontsize=9;
+            label=<<B>Initialization (t = 0)</B>>;
+            labeljust=l; fontname="Helvetica"; fontsize=10;
             style="dashed,rounded"; color="#1B4F72";
             bgcolor="#F8F9F9"; penwidth=1.0;
+            rankdir=TB;
 
-            S  [label="Generate Agent\nPositions & Elevations\n(FFF_spatial.py)"];
-            A  [label="Generate Agent\nCategorical Attributes\n(FFF_attributes.py)"];
-            N  [label="DBSCAN Neighborhood\nIdentification\n(FFF_neighborhood.py)"];
-            G  [label="Build Binary Social Network\nEdges where d(i,j) ≤ threshold\n(FFF_network.py)"];
-            AG [label="Create Agents\nSet P(H₁)₀ , draw θᵢ ~ N(μ,σ)"];
-            FL [label="Fit GEV Distribution\nto Return-Period Pairs\n(FFF_flood.py)"];
+            S  [label="Positions &\nElevations"];
+            A  [label="Agent\nAttributes"];
+            N  [label="DBSCAN\nNeighborhoods"];
+            G  [label="Social\nNetwork"];
+            AG [label="Create Agents\nP(H₁)₀ , θᵢ"];
+            FL [label="Fit GEV\nFlood Dist."];
 
             S -> A -> N -> G -> AG -> FL;
         }
 
-        /* ---- Annual loop ---- */
+        /* ---- Annual loop (horizontal) ---- */
         subgraph cluster_loop {
-            label=<<B>Annual Time-Step Loop (t = 1, 2, …, T)</B>>;
-            labeljust=l; fontname="Helvetica"; fontsize=9;
+            label=<<B>Annual Loop (t = 1 … T)</B>>;
+            labeljust=l; fontname="Helvetica"; fontsize=10;
             style="dashed,rounded"; color="#1B4F72";
             bgcolor="#FDFEFE"; penwidth=1.0;
 
-            F1 [label=<<B>Sample Flood Level</B><BR/>f<SUB>t</SUB> ~ GEV(μ, σ, ξ), clip to [0,1]>,
-                fillcolor="#D6EAF8"];
-            C1 [label=<<B>Channel 1 — Flood Experience</B><BR/>If f<SUB>t</SUB> &gt; z<SUB>i</SUB> : odds × λ<SUB>flood</SUB><BR/>Else: no update>,
-                fillcolor="#FADBD8"];
-            C2 [label=<<B>Channel 2 — Proximity Learning</B><BR/>For each new retrofitted neighbor j:<BR/>odds × λ<SUB>social</SUB>>,
-                fillcolor="#D5F5E3"];
-            C3 [label=<<B>Channel 3 — Similarity Learning</B><BR/>If same DBSCAN neighborhood:<BR/>odds × λ<SUB>similarity</SUB><SUP> S(i,j)</SUP>>,
-                fillcolor="#FEF9E7"];
-            CV [label=<<B>Convert Back to Probability</B><BR/>P(H₁) = O / (1 + O)>,
-                fillcolor="#EBF5FB"];
-            DEC [label=<<B>Decision Rule (PMT)</B><BR/>If P(H₁) ≥ θ<SUB>i</SUB> → Retrofit permanently>,
+            F1  [label=<<B>Flood</B><BR/>f<SUB>t</SUB> ~ GEV>,
+                 fillcolor="#D6EAF8"];
+            C1  [label=<<B>Ch.1 Experience</B><BR/>odds × λ<SUB>flood</SUB>>,
+                 fillcolor="#FADBD8"];
+            C2  [label=<<B>Ch.2 Proximity</B><BR/>odds × λ<SUB>social</SUB>>,
+                 fillcolor="#D5F5E3"];
+            C3  [label=<<B>Ch.3 Similarity</B><BR/>odds × λ<SUB>sim</SUB><SUP> S(i,j)</SUP>>,
+                 fillcolor="#FEF9E7"];
+            CV  [label=<<B>P(H₁)</B><BR/>O/(1+O)>,
+                 fillcolor="#EBF5FB"];
+            DEC [label=<<B>Decide</B><BR/>P(H₁)≥θ<SUB>i</SUB> ?>,
                  fillcolor="#E8DAEF"];
-            DC [label="Collect Data\n(agent-level & model-level metrics)",
-                fillcolor="#EBF5FB"];
 
-            F1 -> C1 -> C2 -> C3 -> CV -> DEC -> DC;
+            F1 -> C1 -> C2 -> C3 -> CV -> DEC;
         }
 
         /* ---- Connections ---- */
-        FL  -> F1  [style=bold, label="  begin loop ", color="#E67E22",
-                     penwidth=1.0];
-        DC  -> F1  [style=dashed, label=" next t  ", color="#7F8C8D",
-                     constraint=false];
+        FL  -> F1  [style=bold, color="#E67E22", penwidth=1.2,
+                     label=" start "];
+        DEC -> F1  [style=dashed, color="#7F8C8D",
+                     constraint=false, label=" next t "];
 
         /* ---- Output ---- */
-        OUT [label=<<B>Outputs</B><BR/>Adoption curves · Belief evolution<BR/>Network maps · Exported CSV>,
-             fillcolor="#D4E6F1", shape=box, style="rounded,filled"];
-        DC  -> OUT [style=bold, label="  t = T (end) ", color="#E67E22",
-                     penwidth=1.0];
+        OUT [label=<<B>Outputs</B><BR/>Curves, maps, CSV>,
+             fillcolor="#D4E6F1"];
+        DEC -> OUT [style=bold, color="#E67E22", penwidth=1.2,
+                     label=" t=T "];
     }
-    ''', use_container_width=False)
+    ''', use_container_width=True)
 
     # --- 5. Architecture ---
     st.markdown('<div class="doc-section-header">5 &nbsp; Architecture</div>',
@@ -714,9 +720,9 @@ greater than 1 push belief toward $H_1$. A factor of 1 is uninformative.
 
 | Factor | Default | Interpretation |
 |:---|:---:|:---|
-| $\\lambda_{\\mathrm{flood}}$ | 1.20 | Each flood multiplies odds by 20%. Multiple floods needed to reach threshold. |
-| $\\lambda_{\\mathrm{social}}$ | 1.50 | Each connected neighbor who retrofits multiplies odds by 50%. Proximity signal. |
-| $\\lambda_{\\mathrm{similarity}}$ | 3.00 | At $S=1$: triples odds. At $S=0.5$: effective factor = $3.00^{0.5} \\approx 1.73$. At $S=0$: factor = 1 (no effect). Homophily signal. |
+| $\\lambda_{\\mathrm{flood}}$ | 1.25 | Each flood multiplies odds by 25%. Multiple floods needed to reach threshold. |
+| $\\lambda_{\\mathrm{social}}$ | 1.20 | Each connected neighbor who retrofits multiplies odds by 20%. Proximity signal. |
+| $\\lambda_{\\mathrm{similarity}}$ | 2.50 | At $S=1$: multiplies odds by 2.5. At $S=0.5$: effective factor = $2.50^{0.5} \\approx 1.58$. At $S=0$: factor = 1 (no effect). Homophily signal. |
 
 A neighbor who is both connected and in the same neighborhood triggers
 both Channels 2 and 3. A neighbor who is connected but in a different
@@ -756,9 +762,9 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | Parameter | Default | Description |
 |:---|:---:|:---|
 | `INITIAL_BELIEF` | 0.05 | Prior $P(H_1)$. Agents begin with mild awareness. |
-| `LAMBDA_FLOOD` | 1.20 | Bayes factor per flood event (personal experience). |
-| `LAMBDA_SOCIAL` | 1.50 | Bayes factor per connected neighbor retrofit (proximity). |
-| `LAMBDA_SIMILARITY` | 3.00 | Bayes factor at full similarity ($S=1$). Scaled: $\\lambda_{\\text{similarity}}^{S(i,j)}$. |
+| `LAMBDA_FLOOD` | 1.25 | Bayes factor per flood event (personal experience). |
+| `LAMBDA_SOCIAL` | 1.20 | Bayes factor per connected neighbor retrofit (proximity). |
+| `LAMBDA_SIMILARITY` | 2.50 | Bayes factor at full similarity ($S=1$). Scaled: $\\lambda_{\\text{similarity}}^{S(i,j)}$. |
 """)
 
     st.subheader("9.2 &nbsp; PMT Threshold Parameters")
@@ -873,12 +879,6 @@ with tab_settings:
             slope, noise_factor = 1.0, 0.0
             st.info("Spatial layout is determined by uploaded CSV "
                     "in Case Study Mode.")
-
-        st.subheader("🧬 Agent Attributes")
-        enable_het = st.checkbox(
-            "Enable Attribute Heterogeneity", value=True)
-        n_attributes = st.number_input("Attributes per Agent", 1, 10, 2)
-        n_classes = st.number_input("Classes per Attribute", 1, 10, 3)
 
     with col_right:
         st.subheader("🔗 Network")
@@ -1088,8 +1088,8 @@ def make_figures(model):
     fig.tight_layout(w_pad=3)
     figs["belief"] = fig
 
-    # --- Figure 4: Network map ---
-    fig, ax1 = plt.subplots(figsize=(10, 5))
+    # --- Figure 4: Network map (half-page) ---
+    fig, ax1 = plt.subplots(figsize=(6.5, 5.5))
 
     segs = []
     for u, v in model.G.edges():
@@ -1123,7 +1123,7 @@ def make_figures(model):
                      va="center", fontsize=font_size,
                      fontweight="bold", zorder=3)
     ax1.set(xlabel="$x$", ylabel="$y$",
-            title="Social Network — Binary Connections within Threshold",
+            title="Social Network",
             xlim=(-0.02, 1.02), ylim=(-0.02, 1.02), aspect="equal")
     ax1.legend(handles=[
         Patch(facecolor=CLR_NOT_RETRO, edgecolor="black",
@@ -1132,23 +1132,10 @@ def make_figures(model):
               label="Retrofitted")],
         loc="upper right", fontsize=FS-2, framealpha=0.9)
     fig.tight_layout()
-    figs["network_large"] = fig
+    figs["network"] = fig
 
-    # --- Figure 5: Similarity distribution (standalone) ---
-    fig, ax2 = plt.subplots(figsize=(8, 4))
-    sims = [d["similarity"] for _, _, d in model.G.edges(data=True)]
-    ax2.hist(sims, bins=30, color=CLR_SECONDARY, edgecolor="white",
-             linewidth=0.4, alpha=0.85)
-    ax2.axvline(np.mean(sims), color=CLR_DANGER, linestyle="--",
-                linewidth=1.2, label=f"Mean = {np.mean(sims):.3f}")
-    ax2.set(xlabel="Jaccard Similarity $S(i,j)$", ylabel="Frequency",
-            title="Attribute Similarity Distribution (Jaccard, 1912)")
-    ax2.legend(framealpha=0.9)
-    fig.tight_layout()
-    figs["similarity"] = fig
-
-    # --- Figure 6: Spatial map (compact) ---
-    fig, ax = plt.subplots(figsize=(6, 5))
+    # --- Figure 5: Spatial map (half-page) ---
+    fig, ax = plt.subplots(figsize=(6.5, 5.5))
     segs2 = []
     for u, v in model.G.edges():
         a_u, a_v = model.agents_by_node[u], model.agents_by_node[v]
@@ -1157,22 +1144,29 @@ def make_figures(model):
         ax.add_collection(LineCollection(
             segs2, linewidths=0.3, colors="gray", alpha=0.15, zorder=1))
     small_node = max(40, min(180, 6000 // max(len(agents), 1)))
+    # All agents colored by elevation
     sc = ax.scatter([a.x for a in agents], [a.y for a in agents],
                     c=[a.z for a in agents], cmap="terrain", s=small_node,
                     alpha=0.8, edgecolor="black", linewidth=0.3, zorder=2)
-    for a in agents:
-        if a.is_retrofitted:
-            ax.scatter(a.x, a.y, c=CLR_RETRO, s=small_node,
-                       edgecolor="black", linewidth=1.0, zorder=3)
+    # Retrofitted agents: mark with thick colored outline (no fill change)
+    ret_agents = [a for a in agents if a.is_retrofitted]
+    if ret_agents:
+        ax.scatter([a.x for a in ret_agents], [a.y for a in ret_agents],
+                   facecolors="none", s=small_node * 1.6,
+                   edgecolor=CLR_RETRO, linewidth=1.8, zorder=3)
     plt.colorbar(sc, ax=ax, shrink=0.7, pad=0.02).set_label(
         "Elevation", fontsize=FS-2)
     ax.set(xlabel="$x$", ylabel="$y$",
            title="Elevation & Retrofit Status",
            xlim=(-0.02, 1.02), ylim=(-0.02, 1.02), aspect="equal")
+    from matplotlib.lines import Line2D
     ax.legend(handles=[
-        Patch(facecolor=CLR_RETRO, edgecolor="black", label="Retrofitted"),
-        Patch(facecolor="lightgray", edgecolor="black",
-              label="Not Retrofitted")],
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='none',
+               markeredgecolor=CLR_RETRO, markeredgewidth=1.8,
+               markersize=8, label="Retrofitted"),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='gray',
+               markeredgecolor='black', markeredgewidth=0.3,
+               markersize=8, label="Not Retrofitted")],
         loc="upper right", fontsize=FS-3, framealpha=0.9)
     fig.tight_layout()
     figs["spatial"] = fig
@@ -1318,14 +1312,11 @@ with tab_results:
         st.header("Belief Evolution")
         st.pyplot(figs["belief"])
 
-        st.header("Social Network")
-        st.pyplot(figs["network_large"])
-
-        # Similarity + Spatial side by side (similarity bigger)
-        col_sim, col_sp = st.columns([3, 2])
-        with col_sim:
-            st.header("Similarity Distribution")
-            st.pyplot(figs["similarity"])
+        # Network + Spatial side by side
+        col_net, col_sp = st.columns(2)
+        with col_net:
+            st.header("Social Network")
+            st.pyplot(figs["network"])
         with col_sp:
             st.header("Spatial Map")
             st.pyplot(figs["spatial"])
