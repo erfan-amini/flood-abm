@@ -98,6 +98,10 @@ section[data-testid="stSidebar"] .stRadio label {
 section[data-testid="stSidebar"] hr {
     border-color: rgba(255,255,255,0.12) !important;
 }
+section[data-testid="stSidebar"] input[type="number"],
+section[data-testid="stSidebar"] .stNumberInput input {
+    color: #1C2833 !important;
+}
 
 /* ---------- Metric cards ---------- */
 div[data-testid="stMetric"] {
