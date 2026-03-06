@@ -101,8 +101,9 @@ def generate_connected_grid_neighborhoods(n_agents, distance_threshold,
         total_width = grid_cols * nh_width + (grid_cols - 1) * gap
         total_height = grid_rows * nh_height + (grid_rows - 1) * gap
 
-    # Center layout within unit square, respecting minimum margin
-    margin_x = max(_MIN_MARGIN, (1.0 - total_width) / 2)
+    # Left-align horizontally so agents start near x=0 (low elevation);
+    # center vertically within the unit square.
+    margin_x = _MIN_MARGIN
     margin_y = max(_MIN_MARGIN, (1.0 - total_height) / 2)
 
     all_coords = []

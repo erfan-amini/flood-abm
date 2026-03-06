@@ -119,7 +119,8 @@ div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
 /* ---------- Tabs ---------- */
 button[data-baseweb="tab"] {
     font-weight: 600 !important;
-    font-size: 0.95rem !important;
+    font-size: 1.08rem !important;
+    padding: 0.6rem 1.2rem !important;
 }
 button[data-baseweb="tab"][aria-selected="true"] {
     color: var(--primary) !important;
@@ -225,8 +226,8 @@ plt.rcParams.update({
 # ---------------------------------------------------------------------------
 st.markdown("""
 <div class="main-banner">
-    <h1>🌊 Flood Adaptation Agent-Based Model</h1>
-    <p>Bayesian Belief Updating with Three Evidence Channels — Household Retrofit Decision Simulator</p>
+    <h1>🌊 Social Learning and Flood Adaptation — Agent-Based Model</h1>
+    <p>Bayesian Belief Updating for Household Retrofit Decisions under Flood Risk</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -260,13 +261,13 @@ st.sidebar.header("📐 Bayesian Updating")
 initial_belief = st.sidebar.slider(
     "Initial Belief  —  $P(H_1)$", 0.01, 0.50, 0.05, 0.01)
 lambda_flood = st.sidebar.slider(
-    "Flood Experience  —  $\\lambda_{\\mathrm{flood}}$ (Ch.1)",
+    "Flood Experience  —  $\\lambda_{\\mathrm{flood}}$",
     1.0, 3.0, 1.20, 0.01)
 lambda_social = st.sidebar.slider(
-    "Proximity Learning  —  $\\lambda_{\\mathrm{social}}$ (Ch.2)",
+    "Proximity Learning  —  $\\lambda_{\\mathrm{social}}$",
     1.0, 5.0, 1.50, 0.01)
 lambda_similarity = st.sidebar.slider(
-    "Similarity Learning  —  $\\lambda_{\\mathrm{similarity}}$ (Ch.3)",
+    "Similarity Learning  —  $\\lambda_{\\mathrm{similarity}}$",
     1.0, 10.0, 3.00, 0.1)
 
 st.sidebar.divider()
@@ -317,8 +318,28 @@ tab_doc, tab_settings, tab_sim, tab_results = st.tabs(
 
 with tab_doc:
 
-    # --- 1. Overview ---
-    st.markdown('<div class="doc-section-header">1 &nbsp; Overview</div>',
+    # --- 1. Motivation ---
+    st.markdown('<div class="doc-section-header">1 &nbsp; Motivation</div>',
+                unsafe_allow_html=True)
+    st.markdown("""
+Coastal communities face escalating flood risks from climate change.
+Public investment in protection happens on long time frames, is highly
+uncertain, and leaves residual risk. Mitigating rising recovery costs
+in the short term requires action by individuals and communities, yet
+household investment in adaptation remains remarkably low (Amini et al.,
+2025).
+
+Empirical evidence from household surveys along the U.S. Eastern Seaboard
+shows that residents are aware of increasing flood risk — 61% expect
+more frequent flooding and 71% expect rising expenses — but they lack
+information about the benefits and costs of home retrofits. Only about
+25% of residents have taken protective action despite flood experience
+and awareness of risk (Amini et al., 2025). This gap between risk
+awareness and protective action motivates the present model.
+""")
+
+    # --- 2. Overview ---
+    st.markdown('<div class="doc-section-header">2 &nbsp; Overview</div>',
                 unsafe_allow_html=True)
     st.markdown("""
 This agent-based model simulates household flood-adaptation decisions
@@ -338,13 +359,18 @@ via Bayes factors. Each evidence channel contributes a separate Bayes
 factor. When $P(H_1)$ exceeds a heterogeneous threshold drawn from a
 truncated Normal distribution (Rogers, 1975), the agent retrofits
 permanently.
+
+The model examines what learning processes — experience-based versus
+social — are consistent with observed limited investment in adaptation,
+and how household heterogeneity influences the diffusion of adaptation
+behavior through social networks (Amini et al., 2025).
 """)
 
     # --- 2. Theoretical Framework ---
-    st.markdown('<div class="doc-section-header">2 &nbsp; Theoretical Framework</div>',
+    st.markdown('<div class="doc-section-header">3 &nbsp; Theoretical Framework</div>',
                 unsafe_allow_html=True)
 
-    st.subheader("2.1 &nbsp; Bayesian Belief Updating — Odds Form")
+    st.subheader("3.1 &nbsp; Bayesian Belief Updating — Odds Form")
     st.markdown("""
 Each agent maintains $P(H_1)$, the probability that their situation
 warrants retrofitting. The update rule is Bayes' theorem in odds form
@@ -363,7 +389,7 @@ $P(H_1) = \\text{odds} / (1 + \\text{odds})$. The odds form has the
 advantage that each evidence source is characterized by a single number.
 """)
 
-    st.subheader("2.2 &nbsp; Channel 1: Personal Flood Experience")
+    st.subheader("3.2 &nbsp; Channel 1: Personal Flood Experience")
     st.markdown("""
 Each year, a flood level is drawn from a GEV distribution (Coles, 2001).
 If the flood level exceeds the agent's elevation, the agent is flooded
@@ -378,7 +404,7 @@ evidence boost, and agents require multiple events to reach their
 threshold.
 """)
 
-    st.subheader("2.3 &nbsp; Channel 2: Proximity-Based Social Learning")
+    st.subheader("3.3 &nbsp; Channel 2: Proximity-Based Social Learning")
     st.markdown("""
 Network connections are binary: two agents are connected if their
 Euclidean distance is within `DISTANCE_THRESHOLD`, and not connected
@@ -393,7 +419,7 @@ appropriateness of retrofitting, regardless of how similar the two
 agents are (McPherson et al., 2001).
 """)
 
-    st.subheader("2.4 &nbsp; Channel 3: Similarity-Based Social Learning")
+    st.subheader("3.4 &nbsp; Channel 3: Similarity-Based Social Learning")
     st.markdown("""
 Neighborhoods are identified using DBSCAN density-based clustering
 (Ester et al., 1996) applied to agent positions with the same distance
@@ -417,7 +443,7 @@ A retrofitting neighbor who is both connected and in the same
 neighborhood triggers both updates.
 """)
 
-    st.subheader("2.5 &nbsp; Protection Motivation Theory (Rogers, 1975)")
+    st.subheader("3.5 &nbsp; Protection Motivation Theory (Rogers, 1975)")
     st.markdown("""
 Once $P(H_1) \\geq$ the agent's individual PMT threshold, the agent
 retrofits permanently. Thresholds are drawn from a truncated Normal
@@ -425,7 +451,7 @@ distribution $\\mathcal{N}(\\mu, \\sigma)$ clipped to
 $[\\text{low}, \\text{high}]$. Retrofit is irreversible.
 """)
 
-    st.subheader("2.6 &nbsp; Edge Attributes")
+    st.subheader("3.6 &nbsp; Edge Attributes")
     st.markdown("""
 Each network edge stores the Jaccard similarity
 $S(i,j) = |\\text{matching attributes}| \\,/\\, |\\text{total attributes}|$
@@ -434,7 +460,7 @@ $S(i,j) = |\\text{matching attributes}| \\,/\\, |\\text{total attributes}|$
 No distance decay weighting is applied to edges.
 """)
 
-    st.subheader("2.7 &nbsp; Flood Generation (Coles, 2001)")
+    st.subheader("3.7 &nbsp; Flood Generation (Coles, 2001)")
     st.markdown("""
 Annual flood levels are sampled from a Generalized Extreme Value (GEV)
 distribution fitted to user-defined return periods and flood levels
@@ -443,7 +469,7 @@ drawn and clipped to $[0, 1]$. Agents whose elevation $z$ is below the
 flood level are flooded.
 """)
 
-    st.subheader("2.8 &nbsp; Neighborhood Identification (Ester et al., 1996)")
+    st.subheader("3.8 &nbsp; Neighborhood Identification (Ester et al., 1996)")
     st.markdown("""
 Spatial neighborhoods are identified using DBSCAN with
 $\\varepsilon$ = `DISTANCE_THRESHOLD` and `min_samples` = `DBSCAN_MIN_SAMPLES`.
@@ -455,7 +481,7 @@ bridging two neighborhoods.
 """)
 
     # --- 3. Architecture ---
-    st.markdown('<div class="doc-section-header">3 &nbsp; Architecture</div>',
+    st.markdown('<div class="doc-section-header">4 &nbsp; Architecture</div>',
                 unsafe_allow_html=True)
     st.markdown("""
 | File | Description |
@@ -473,10 +499,10 @@ the main file.*
 """)
 
     # --- 4. How It Works ---
-    st.markdown('<div class="doc-section-header">4 &nbsp; How It Works</div>',
+    st.markdown('<div class="doc-section-header">5 &nbsp; How It Works</div>',
                 unsafe_allow_html=True)
 
-    st.subheader("4.1 &nbsp; Initialization")
+    st.subheader("5.1 &nbsp; Initialization")
     st.markdown("""
 1. Generate agent positions and elevations (`FFF_spatial.py`).
 2. Generate agent attributes (`FFF_attributes.py`).
@@ -489,7 +515,7 @@ the main file.*
 6. Fit GEV distribution to return period / flood level pairs (`FFF_flood.py`).
 """)
 
-    st.subheader("4.2 &nbsp; Each Time Step (Year)")
+    st.subheader("5.2 &nbsp; Each Time Step (Year)")
     st.markdown("""
 1. Sample annual flood level from GEV (Coles, 2001), clipped to [0, 1].
 2. **Channel 1 (personal):** Each non-retrofitted agent checks whether
@@ -506,7 +532,7 @@ the main file.*
 """)
 
     # --- 5. Understanding the Bayes Factors ---
-    st.markdown('<div class="doc-section-header">5 &nbsp; Understanding the Bayes Factors</div>',
+    st.markdown('<div class="doc-section-header">6 &nbsp; Understanding the Bayes Factors</div>',
                 unsafe_allow_html=True)
     st.markdown("""
 Each evidence channel has a Bayes factor that measures how much the
@@ -525,7 +551,7 @@ neighborhood (or a connector agent) triggers only Channel 2.
 """)
 
     # --- 6. Key Properties ---
-    st.markdown('<div class="doc-section-header">6 &nbsp; Key Properties</div>',
+    st.markdown('<div class="doc-section-header">7 &nbsp; Key Properties</div>',
                 unsafe_allow_html=True)
     st.markdown("""
 **Three separable evidence channels.** Flood experience, proximity, and
@@ -549,10 +575,10 @@ same exposure may adopt at different times due to individual PMT thresholds.
 """)
 
     # --- 7. Parameters ---
-    st.markdown('<div class="doc-section-header">7 &nbsp; Parameters</div>',
+    st.markdown('<div class="doc-section-header">8 &nbsp; Parameters</div>',
                 unsafe_allow_html=True)
 
-    st.subheader("7.1 &nbsp; Bayesian Belief Parameters")
+    st.subheader("8.1 &nbsp; Bayesian Belief Parameters")
     st.markdown("""
 | Parameter | Default | Description |
 |:---|:---:|:---|
@@ -562,7 +588,7 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | `LAMBDA_SIMILARITY` | 3.00 | Ch.3: Bayes factor at full Jaccard similarity ($S=1$). Scaled: effective = $\\lambda^{S(i,j)}$. |
 """)
 
-    st.subheader("7.2 &nbsp; PMT Threshold Parameters (Rogers, 1975)")
+    st.subheader("8.2 &nbsp; PMT Threshold Parameters (Rogers, 1975)")
     st.markdown("""
 | Parameter | Default | Description |
 |:---|:---:|:---|
@@ -572,7 +598,7 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | `PMT_THRESHOLD_HIGH` | 0.50 | Hard upper bound (truncation). |
 """)
 
-    st.subheader("7.3 &nbsp; Network, Neighborhood & Spatial Parameters")
+    st.subheader("8.3 &nbsp; Network, Neighborhood & Spatial Parameters")
     st.markdown("""
 | Parameter | Default | Description |
 |:---|:---:|:---|
@@ -585,7 +611,7 @@ same exposure may adopt at different times due to individual PMT thresholds.
 """)
 
     # --- 8. Modes of Operation ---
-    st.markdown('<div class="doc-section-header">8 &nbsp; Modes of Operation</div>',
+    st.markdown('<div class="doc-section-header">9 &nbsp; Modes of Operation</div>',
                 unsafe_allow_html=True)
 
     col_r, col_c = st.columns(2)
@@ -610,7 +636,7 @@ Designed for application to a specific site. Upload:
 """)
 
     # --- 9. CSV Format ---
-    st.markdown('<div class="doc-section-header">9 &nbsp; Case Study Mode — CSV Format</div>',
+    st.markdown('<div class="doc-section-header">10 &nbsp; Case Study Mode — CSV Format</div>',
                 unsafe_allow_html=True)
 
     col_loc, col_fld = st.columns(2)
@@ -622,9 +648,10 @@ Designed for application to a specific site. Upload:
         st.code("flood_level\n0.02\n0.00\n0.08\n...", language="csv")
 
     # --- 10. References ---
-    st.markdown('<div class="doc-section-header">10 &nbsp; References</div>',
+    st.markdown('<div class="doc-section-header">11 &nbsp; References</div>',
                 unsafe_allow_html=True)
     st.markdown("""
+- Amini, E., Madajewicz, M., Orton, P., Srikrishnan, V., & Yanez Mena, P. (2025). Social Learning and Flood Adaptation via an Agent-Based Model. Poster presented at AGU Fall Meeting 2025, Washington, D.C.
 - Coles, S. (2001). *An Introduction to Statistical Modeling of Extreme Values*. Springer.
 - Ester, M., Kriegel, H.-P., Sander, J., & Xu, X. (1996). A density-based algorithm for discovering clusters in large spatial databases with noise. *KDD-96*, 226–231.
 - Hosking, J. R. M., & Wallis, J. R. (1997). *Regional Frequency Analysis*. Cambridge University Press.
@@ -900,7 +927,7 @@ def make_figures(model):
     not_adopted = [a for a in agents if not a.is_retrofitted]
     # Larger node size for readability
     node_size = max(100, min(450, 15000 // max(len(agents), 1)))
-    font_size = max(7, min(10, 2200 // max(len(agents), 1)))
+    font_size = max(5, min(7, 1400 // max(len(agents), 1)))
     if not_adopted:
         ax1.scatter([a.x for a in not_adopted], [a.y for a in not_adopted],
                     c=CLR_NOT_RETRO, s=node_size, edgecolor="black",
