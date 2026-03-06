@@ -1230,7 +1230,8 @@ with tab_sim:
             M.CSV_PATH = csv_path
             log(f"  Loaded {len(csv_df)} agents from uploaded CSV")
 
-        model = M.FloodAdaptationModel()
+        model = M.FloodAdaptationModel(
+            n_agents=M.N_AGENTS, time_steps=M.TIME_STEPS, seed=M.RANDOM_SEED)
         log(f"  Agents: {model.n_agents}")
         log(f"  Edges: {model.G.number_of_edges()}")
         log(f"  Neighborhoods: {model.n_neighborhoods} "
