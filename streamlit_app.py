@@ -257,7 +257,7 @@ st.sidebar.divider()
 st.sidebar.header("⚙️ General Settings")
 
 time_steps = st.sidebar.slider("Time Steps", 10, 500, 100, step=10)
-n_agents = st.sidebar.slider("Number of Agents", 20, 1000, 200, step=10)
+n_agents = st.sidebar.slider("Number of Agents", 10, 100000, 200, step=10)
 
 st.sidebar.divider()
 st.sidebar.header("📐 Bayesian Updating")
