@@ -102,6 +102,15 @@ section[data-testid="stSidebar"] input[type="number"],
 section[data-testid="stSidebar"] .stNumberInput input {
     color: #1C2833 !important;
 }
+section[data-testid="stSidebar"] .stFileUploader div,
+section[data-testid="stSidebar"] .stFileUploader span,
+section[data-testid="stSidebar"] .stFileUploader small,
+section[data-testid="stSidebar"] .stFileUploader label,
+section[data-testid="stSidebar"] .stFileUploader p,
+section[data-testid="stSidebar"] .stFileUploader button,
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {
+    color: #5D6D7E !important;
+}
 
 /* ---------- Metric cards ---------- */
 div[data-testid="stMetric"] {
@@ -122,10 +131,10 @@ div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
 
 /* ---------- Tabs ---------- */
 button[data-baseweb="tab"] {
-    font-weight: 600 !important;
-    font-size: 1.22rem !important;
-    padding: 0.7rem 1.4rem !important;
-    letter-spacing: 0.2px !important;
+    font-weight: 700 !important;
+    font-size: 1.55rem !important;
+    padding: 0.85rem 1.6rem !important;
+    letter-spacing: 0.3px !important;
 }
 button[data-baseweb="tab"][aria-selected="true"] {
     color: var(--primary) !important;
@@ -256,8 +265,13 @@ mode = st.sidebar.radio(
 st.sidebar.divider()
 st.sidebar.header("⚙️ General Settings")
 
-time_steps = st.sidebar.slider("Time Steps", 10, 500, 100, step=10)
-n_agents = st.sidebar.slider("Number of Agents", 10, 100000, 200, step=10)
+time_steps = st.sidebar.number_input("Time Steps", 10, 10000, 100, step=10)
+if mode == "Research Mode":
+    n_agents = st.sidebar.number_input("Number of Agents", 10, 100000, 200, step=10)
+else:
+    st.sidebar.number_input("Number of Agents (set by CSV)", 0, 0, 0,
+                            disabled=True)
+    n_agents = 200  # placeholder; overridden by CSV row count at runtime
 
 st.sidebar.divider()
 st.sidebar.header("📐 Bayesian Updating")
