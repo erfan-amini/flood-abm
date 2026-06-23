@@ -2,8 +2,8 @@
 Flood Adaptation ABM v12 - Bayesian Belief Updating (Three Channels)
 
 Binary hypothesis model:
-  H1 = "my situation warrants retrofitting"
-  H0 = "my situation does not warrant retrofitting"
+  H1 = "I should retrofit my house"
+  H0 = "I should not retrofit my house"
 
 Agents update P(H1) via Bayes' theorem in odds form
 (Jaynes, 2003, Ch. 4; Kass & Raftery, 1995):
@@ -90,7 +90,7 @@ CSV_PATH = None                # Optional CSV with (x, y, z) for SPATIAL_MODE=0
 DBSCAN_MIN_SAMPLES = 4         # Min agents (incl. self) to form a neighborhood core
 
 # --- Bayesian Belief Updating — Odds Form (Jaynes, 2003, Ch. 4) ---
-# Agent belief = P(H1) where H1 = "my situation warrants retrofitting"
+# Agent belief = P(H1) where H1 = "I should retrofit my house"
 # Updated via: posterior_odds = prior_odds x Bayes_factor
 # (Kass & Raftery, 1995)
 INITIAL_BELIEF = 0.05          # Prior P(H1): mild awareness in flood zone
@@ -287,7 +287,7 @@ class HouseholdAgent(mesa.Agent):
     """
     Bayesian household agent (Jaynes, 2003).
 
-    Maintains P(H1) where H1 = "my situation warrants retrofitting."
+    Maintains P(H1) where H1 = "I should retrofit my house."
     Three evidence channels update belief via odds-form Bayes factors:
       1. Flood: odds *= LAMBDA_FLOOD (Tversky & Kahneman, 1974)
       2. Proximity: odds *= LAMBDA_SOCIAL per connected neighbor
@@ -301,7 +301,7 @@ class HouseholdAgent(mesa.Agent):
         self.x = x
         self.y = y
         self.z = z
-        self.belief = initial_belief       # P(H1): probability situation warrants retrofit
+        self.belief = initial_belief       # P(H1): probability I should retrofit my house
         self.pmt_threshold = pmt_threshold # Individual decision threshold
         self.neighborhood_id = neighborhood_id  # DBSCAN cluster label (-1 = none)
         self.is_retrofitted = False

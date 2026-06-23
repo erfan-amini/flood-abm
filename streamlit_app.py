@@ -424,16 +424,15 @@ awareness and protective action motivates the present model.
 This agent-based model simulates household flood-adaptation decisions
 using Bayesian belief updating in odds form (Jaynes, 2003, Ch. 4; Kass &
 Raftery, 1995). Agents maintain a probability $P(H_1)$ representing their
-belief that their situation warrants retrofitting. This belief is
+belief that they should retrofit their house. This belief is
 updated each year through three evidence channels: personal flood
 experience, proximity-based social observation, and similarity-based
 social learning. The model is built on the Mesa framework (Kazil et al.,
 2020) for Python.
 
 The core mechanism is binary hypothesis testing. Each agent considers
-two subjective assessments: **$H_1$ = "my situation warrants
-retrofitting"** and **$H_0$ = "my situation does not warrant
-retrofitting."** Evidence shifts belief by multiplying the agent's odds
+two subjective assessments: **$H_1$ = "I should retrofit my
+house"** and **$H_0$ = "I should not retrofit my house."** Evidence shifts belief by multiplying the agent's odds
 via Bayes factors. Each evidence channel contributes a separate Bayes
 factor. When $P(H_1)$ exceeds a heterogeneous threshold (Rogers, 1975)
 drawn from a clipped Normal distribution, the agent retrofits
@@ -453,8 +452,8 @@ behavior through social networks (Amini et al., 2025).
     st.subheader("3.1 &nbsp; Bayesian Belief Updating — Full Formulation")
     st.markdown("""
 Each agent $i$ maintains a subjective belief $P_i(H_1) \\in [0, 1]$,
-where $H_1$ = "my situation warrants retrofitting" and $H_0$ = "my
-situation does not warrant retrofitting." The updating mechanism
+where $H_1$ = "I should retrofit my house" and $H_0$ = "I should not
+retrofit my house." The updating mechanism
 proceeds through three algebraic steps at each evidence event
 (Jaynes, 2003, Ch. 4; Kass & Raftery, 1995):
 
