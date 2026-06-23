@@ -10,7 +10,7 @@ Agents update P(H1) via Bayes' theorem in odds form
   posterior_odds = prior_odds x Bayes_factor
 
 Three evidence channels:
-  1. Personal flood experience (LAMBDA_FLOOD):
+  1. Personal flood experience (LAMBDA_FLOOD_SEQ):
      Flood events multiply odds; safe years produce no update
      (availability heuristic, Tversky & Kahneman, 1974).
   2. Proximity-based social learning (LAMBDA_SOCIAL):
@@ -98,7 +98,12 @@ INITIAL_BELIEF = 0.05          # Prior P(H1): mild awareness in flood zone
 # --- Channel 1: Personal Flood Experience (Jaynes, 2003, Ch. 4) ---
 # Asymmetric updating (Tversky & Kahneman, 1974): only flood events
 # shift belief; safe years leave belief unchanged.
-LAMBDA_FLOOD = 1.20            # Bayes factor per flood event
+# Each flood is a distinct piece of evidence whose Bayes factor need not
+# be identical (Kass & Raftery, 1995). LAMBDA_FLOOD_SEQ gives the factor
+# for the 1st, 2nd, 3rd, and 4th-and-later flood. Front-loading the early
+# entries makes the first experiences dominate (Tversky & Kahneman, 1974);
+# setting all entries equal recovers the constant-factor model.
+LAMBDA_FLOOD_SEQ = [1.20, 1.20, 1.20, 1.20]   # Bayes factor: [1st, 2nd, 3rd, 4th+] flood
 
 # --- Channel 2: Proximity-Based Social Learning ---
 # Binary: connected neighbors (within DISTANCE_THRESHOLD) who retrofit
@@ -196,7 +201,7 @@ def save_parameters(output_dir):
 
         f.write("BAYESIAN BELIEF - THREE CHANNELS (Jaynes, 2003)\n" + "-" * 40 + "\n")
         f.write(f"INITIAL_BELIEF         = {INITIAL_BELIEF}\n")
-        f.write(f"LAMBDA_FLOOD           = {LAMBDA_FLOOD}  (Ch.1: personal)\n")
+        f.write(f"LAMBDA_FLOOD_SEQ       = {LAMBDA_FLOOD_SEQ}  (Ch.1: per-flood)\n")
         f.write(f"LAMBDA_SOCIAL          = {LAMBDA_SOCIAL}  (Ch.2: proximity)\n")
         f.write(f"LAMBDA_SIMILARITY      = {LAMBDA_SIMILARITY}  (Ch.3: similarity)\n\n")
 
@@ -289,7 +294,7 @@ class HouseholdAgent(mesa.Agent):
 
     Maintains P(H1) where H1 = "I should retrofit my house."
     Three evidence channels update belief via odds-form Bayes factors:
-      1. Flood: odds *= LAMBDA_FLOOD (Tversky & Kahneman, 1974)
+      1. Flood: odds *= LAMBDA_FLOOD_SEQ[k] for the k-th flood (Tversky & Kahneman, 1974)
       2. Proximity: odds *= LAMBDA_SOCIAL per connected neighbor
       3. Similarity: odds *= LAMBDA_SIMILARITY^S(i,j) within neighborhood
     Retrofits when P(H1) >= individual pmt_threshold (Rogers, 1975).
@@ -316,17 +321,22 @@ class HouseholdAgent(mesa.Agent):
         Asymmetric Bayesian update from flood experience.
 
         Motivated by the availability heuristic (Tversky & Kahneman, 1974):
-        vivid flood events multiply odds by LAMBDA_FLOOD; safe years
-        produce no update (non-events are not psychologically salient).
+        vivid flood events multiply the odds; safe years produce no update
+        (non-events are not psychologically salient).
 
-        If flooded: odds *= LAMBDA_FLOOD
+        The Bayes factor depends on which flood this is (Kass & Raftery,
+        1995): the agent's k-th flood uses LAMBDA_FLOOD_SEQ[k-1], with the
+        last entry reused for all floods beyond the sequence length.
+
+        If flooded: odds *= LAMBDA_FLOOD_SEQ[flood number]
         If not flooded: no update.
         """
         if self.is_retrofitted:
             return False
         if flood_level > self.z:
+            idx = min(self.flood_count, len(LAMBDA_FLOOD_SEQ) - 1)
             self.flood_count += 1
-            self.belief = bayesian_update(self.belief, LAMBDA_FLOOD)
+            self.belief = bayesian_update(self.belief, LAMBDA_FLOOD_SEQ[idx])
             return True
         return False
 
@@ -812,7 +822,7 @@ if __name__ == "__main__":
     print(f"Neighborhoods: DBSCAN eps={DISTANCE_THRESHOLD}, "
           f"min_samples={DBSCAN_MIN_SAMPLES}")
     print(f"Bayesian: P(H1)_0={INITIAL_BELIEF}")
-    print(f"  Ch.1 flood:      lambda={LAMBDA_FLOOD}")
+    print(f"  Ch.1 flood:      lambda_seq={LAMBDA_FLOOD_SEQ}")
     print(f"  Ch.2 proximity:  lambda={LAMBDA_SOCIAL}")
     print(f"  Ch.3 similarity: lambda={LAMBDA_SIMILARITY}")
     print(f"PMT threshold: N({PMT_THRESHOLD_MEAN},{PMT_THRESHOLD_STD}) "

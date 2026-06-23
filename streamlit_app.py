@@ -309,9 +309,12 @@ st.sidebar.header("📐 Bayesian Updating")
 
 initial_belief = st.sidebar.slider(
     "Initial Belief  —  $P(H_1)$", 0.01, 0.50, 0.05, 0.01)
-lambda_flood = st.sidebar.slider(
-    "Flood Experience  —  $\\lambda_{\\mathrm{flood}}$",
-    1.0, 3.0, 1.25, 0.01)
+lambda_flood_str = st.sidebar.text_input(
+    "Flood Experience  —  $\\lambda_{\\mathrm{flood}}$ per flood [1st, 2nd, 3rd, 4th+]",
+    "1.25, 1.25, 1.25, 1.25",
+    help=("Bayes factor for the 1st, 2nd, 3rd, and 4th-and-later flood. "
+          "Front-load the early values to make the first floods dominate."))
+lambda_flood_seq = [float(x.strip()) for x in lambda_flood_str.split(",")]
 lambda_social = st.sidebar.slider(
     "Proximity Learning  —  $\\lambda_{\\mathrm{social}}$",
     1.0, 5.0, 1.20, 0.01)
@@ -505,21 +508,28 @@ Each time step, a global flood level $f_t$ is drawn from a Generalized
 Extreme Value distribution (Coles, 2001). Agent $i$ with elevation $z_i$
 is flooded if $f_t > z_i$. The update rule is asymmetric, following the
 availability heuristic (Tversky & Kahneman, 1974) — flood events are
-psychologically salient while dry years are cognitively inert:
+psychologically salient while dry years are cognitively inert. Each flood
+is a distinct piece of evidence whose Bayes factor need not be identical
+(Kass & Raftery, 1995): the agent's $k$-th flood carries factor
+$\\lambda_{\\text{flood}}^{(k)}$, taken from the sequence `LAMBDA_FLOOD_SEQ`
+(with the last entry reused for all later floods):
 """)
     st.latex(r"""
 \lambda_{\text{flood},i}^{(t)} =
 \begin{cases}
-\lambda_{\text{flood}} & \text{if } f_t > z_i \quad \text{(flooded)} \\
+\lambda_{\text{flood}}^{(k)} & \text{if } f_t > z_i \;\;\text{(agent's } k\text{-th flood)} \\
 1 & \text{if } f_t \leq z_i \quad \text{(not flooded; no update)}
 \end{cases}
 """)
     st.markdown("""
-With the default $\\lambda_{\\mathrm{flood}} = 1.25$, each flood
-increases the odds by 25%. An agent must experience several floods
-before belief approaches the decision threshold, consistent with
-observed low adoption rates despite repeated flooding (Amini et al.,
-2025).
+Assigning a larger factor to the first one or two floods lets early
+experiences dominate, which can reproduce a steep rise in retrofit rate
+with the first floods. Setting every entry equal recovers the
+constant-factor model. The default
+`LAMBDA_FLOOD_SEQ = [1.25, 1.25, 1.25, 1.25]` means each flood increases
+the odds by 25%, so an agent must experience several floods before belief
+approaches the decision threshold, consistent with observed low adoption
+despite repeated flooding (Amini et al., 2025).
 """)
 
     st.subheader("3.3 &nbsp; Channel 2: Proximity-Based Social Learning")
@@ -853,7 +863,7 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | Parameter | Default | Description |
 |:---|:---:|:---|
 | `INITIAL_BELIEF` | 0.05 | Prior $P(H_1)$. Agents begin with mild awareness. |
-| `LAMBDA_FLOOD` | 1.25 | Bayes factor per flood event (personal experience). |
+| `LAMBDA_FLOOD_SEQ` | [1.25,1.25,1.25,1.25] | Bayes factor for the 1st, 2nd, 3rd, 4th+ flood (per-flood experience). |
 | `LAMBDA_SOCIAL` | 1.20 | Bayes factor per connected neighbor retrofit (proximity). |
 | `LAMBDA_SIMILARITY` | 2.50 | Bayes factor at full similarity ($S=1$). Scaled: $\\lambda_{\\text{similarity}}^{S(i,j)}$. |
 """)
@@ -1037,7 +1047,7 @@ def apply_params():
     M.USER_EDGES_CSV = None
     M.CSV_PATH = None
     M.INITIAL_BELIEF = initial_belief
-    M.LAMBDA_FLOOD = lambda_flood
+    M.LAMBDA_FLOOD_SEQ = lambda_flood_seq
     M.LAMBDA_SOCIAL = lambda_social
     M.LAMBDA_SIMILARITY = lambda_similarity
     M.PMT_THRESHOLD_MEAN = pmt_mean
@@ -1295,8 +1305,8 @@ with tab_sim:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Agents", n_agents)
     c1.metric("Time Steps", time_steps)
-    c2.metric("Flood Experience — $\\lambda_{\\mathrm{flood}}$",
-              f"{lambda_flood:.2f}")
+    c2.metric("Flood Experience — $\\lambda_{\\mathrm{flood}}$ seq",
+              ", ".join(f"{v:.2f}" for v in lambda_flood_seq))
     c2.metric("Proximity Learning — $\\lambda_{\\mathrm{social}}$",
               f"{lambda_social:.2f}")
     c3.metric("Similarity Learning — $\\lambda_{\\mathrm{sim.}}$",
