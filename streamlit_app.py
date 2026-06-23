@@ -327,7 +327,7 @@ pmt_mean = st.sidebar.slider("Threshold Mean", 0.10, 0.90, 0.50, 0.01)
 if mode == "Research Mode":
     pmt_noise_on = st.sidebar.checkbox(
         "Threshold Heterogeneity", value=False,
-        help="Draw individual thresholds from a truncated Normal.")
+        help="Draw individual thresholds from a clipped Normal.")
     if pmt_noise_on:
         pmt_std = st.sidebar.slider("Std Dev", 0.01, 0.20, 0.10, 0.01)
         pmt_low = st.sidebar.slider("Lower Bound", 0.10, pmt_mean, 0.45, 0.01)
@@ -413,8 +413,8 @@ two subjective assessments: **$H_1$ = "my situation warrants
 retrofitting"** and **$H_0$ = "my situation does not warrant
 retrofitting."** Evidence shifts belief by multiplying the agent's odds
 via Bayes factors. Each evidence channel contributes a separate Bayes
-factor. When $P(H_1)$ exceeds a heterogeneous threshold drawn from a
-truncated Normal distribution (Rogers, 1975), the agent retrofits
+factor. When $P(H_1)$ exceeds a heterogeneous threshold (Rogers, 1975)
+drawn from a clipped Normal distribution, the agent retrofits
 permanently.
 
 The model examines what learning processes — experience-based versus
@@ -515,8 +515,7 @@ $j \\in \\mathcal{N}_i^{(t)}$:
     st.markdown("""
 This captures proximity-based social influence: living near someone who
 has taken action provides a direct signal about the appropriateness of
-retrofitting, regardless of demographic similarity (McPherson et al.,
-2001).
+retrofitting, independent of attribute similarity (Granovetter, 1978).
 """)
 
     st.subheader("3.4 &nbsp; Channel 3: Similarity-Based Social Learning")
@@ -528,8 +527,8 @@ neighborhood. Connector agents and isolated points (DBSCAN label $-1$)
 are excluded from this channel.
 
 For each newly retrofitted neighbor $j$ that shares the same
-neighborhood as agent $i$, the Jaccard similarity $S(i,j)$ between their
-categorical attribute vectors (Jaccard, 1912) modulates the Bayes
+neighborhood as agent $i$, the similarity coefficient $S(i,j)$ between
+their categorical attribute vectors (Gower, 1971) modulates the Bayes
 factor:
 """)
     st.latex(r"""
@@ -542,12 +541,13 @@ value for attribute $k$. The similarity-scaled Bayes factor is:
     st.latex(r"\lambda_{\text{similarity},j} = \lambda_{\text{similarity}}^{\,S(i,j)}")
     st.markdown("""
 When $S = 1$ (identical attributes), the full factor applies. When
-$S = 0$ (no shared attributes), $\\lambda = 1$ (no update). This captures
-the homophily mechanism (McPherson et al., 2001): agents are more
-influenced by those who share their characteristics. Social learning
-rate depends on attribute similarity between agents, reflecting
-empirical patterns where households adopt behaviors of similar neighbors
-(Amini et al., 2025).
+$S = 0$ (no shared attributes), $\\lambda = 1$ (no update). Raising the
+Bayes factor to the power $S$ makes the weight of evidence proportional
+to similarity (Good, 1950), capturing the homophily mechanism
+(McPherson et al., 2001): agents are more influenced by those who share
+their characteristics. Social learning rate depends on attribute
+similarity between agents, reflecting empirical patterns where
+households adopt behaviors of similar neighbors (Amini et al., 2025).
 
 **Combined social update.** A neighbor who is both connected **and** in
 the same neighborhood triggers both Channels 2 and 3 multiplicatively.
@@ -581,7 +581,7 @@ factor of 1, belief is **monotonically non-decreasing** over time.
     st.subheader("3.6 &nbsp; Decision Rule — Protection Motivation Theory")
     st.markdown("""
 Each agent $i$ has an individual decision threshold
-$\\theta_i$ drawn at initialization from a truncated Normal distribution:
+$\\theta_i$ drawn at initialization from a clipped Normal distribution:
 """)
     st.latex(r"""
 \theta_i \sim \mathcal{N}(\mu_\theta,\, \sigma_\theta)
@@ -608,14 +608,13 @@ F(x) = \exp\!\left\{
     st.markdown("""
 where $\\mu$ is the location parameter, $\\sigma > 0$ the scale, and
 $\\xi$ the shape. The parameters are fitted to user-defined return-period
-/ flood-level pairs via constrained optimization (Hosking & Wallis,
-1997). Each year, a single global flood level $f_t$ is drawn and clipped
-to $[0, 1]$.
+/ flood-level pairs by least squares to those points. Each year, a
+single global flood level $f_t$ is drawn and clipped to $[0, 1]$.
 """)
 
-    st.subheader("3.8 &nbsp; Edge Attributes — Jaccard Similarity")
+    st.subheader("3.8 &nbsp; Edge Attributes — Similarity Coefficient")
     st.markdown("""
-Each network edge stores the Jaccard similarity
+Each network edge stores the similarity coefficient
 $S(i,j) = |\\{k : a_{i,k} = a_{j,k}\\}| / K$. Connections are binary:
 agents within `DISTANCE_THRESHOLD` are connected; agents beyond it are
 not. No distance decay weighting is applied to edges.
@@ -717,7 +716,7 @@ annual time-step loop executed by the model.
 | `AAA_model.py` | Main model: parameters, agents, three-channel Bayesian updating, simulation loop, visualization |
 | `FFF_flood.py` | GEV flood generation (Coles, 2001), clipped to [0, 1] |
 | `FFF_spatial.py` | Agent positions and elevations (grid, random, or CSV) |
-| `FFF_attributes.py` | Agent attributes and Jaccard similarity (Jaccard, 1912) |
+| `FFF_attributes.py` | Agent attributes and similarity coefficient (Gower, 1971) |
 | `FFF_network.py` | Binary social network: edges within distance threshold |
 | `FFF_neighborhood.py` | DBSCAN neighborhood identification (Ester et al., 1996) |
 
@@ -736,7 +735,7 @@ the main file.*
 2. Generate agent attributes (`FFF_attributes.py`).
 3. Identify neighborhoods via DBSCAN (`FFF_neighborhood.py`).
 4. Build binary social network: edges between agents within
-   `DISTANCE_THRESHOLD` (`FFF_network.py`). Each edge stores Jaccard similarity.
+   `DISTANCE_THRESHOLD` (`FFF_network.py`). Each edge stores the similarity coefficient.
 5. Create agents with initial belief $P(H_1)$ = `INITIAL_BELIEF`,
    individual PMT threshold from $\\mathcal{N}(\\mu, \\sigma)[\\text{low}, \\text{high}]$,
    and neighborhood label.
@@ -822,8 +821,8 @@ same exposure may adopt at different times due to individual PMT thresholds.
 |:---|:---:|:---|
 | `PMT_THRESHOLD_MEAN` | 0.50 | Population mean threshold. |
 | `PMT_THRESHOLD_STD` | 0.10 | Standard deviation. |
-| `PMT_THRESHOLD_LOW` | 0.50 | Hard lower bound (truncation). |
-| `PMT_THRESHOLD_HIGH` | 0.50 | Hard upper bound (truncation). |
+| `PMT_THRESHOLD_LOW` | 0.50 | Clip lower bound. |
+| `PMT_THRESHOLD_HIGH` | 0.50 | Clip upper bound. |
 """)
 
     st.subheader("9.3 &nbsp; Network, Neighborhood & Spatial Parameters")
@@ -832,7 +831,7 @@ same exposure may adopt at different times due to individual PMT thresholds.
 |:---|:---:|:---|
 | `DISTANCE_THRESHOLD` | 0.09 | Max distance for binary connections and DBSCAN $\\varepsilon$. |
 | `DBSCAN_MIN_SAMPLES` | 4 | Min agents (incl. self) to form a DBSCAN core point. |
-| `N_ATTRIBUTES` | 2 | Attributes per agent. Determines Jaccard resolution. |
+| `N_ATTRIBUTES` | 2 | Attributes per agent. Determines similarity resolution. |
 | `N_CLASSES` | 3 | Categories per attribute. With 2 attrs × 3 classes: $S \\in \\{0, 0.5, 1\\}$. |
 | `SPATIAL_MODE` | 2 | 0=CSV, 1=random, 2=grid with connectors. |
 | `SLOPE` | 1.0 | Elevation gradient. $z = \\text{slope} \\times x$. |
@@ -848,7 +847,7 @@ same exposure may adopt at different times due to individual PMT thresholds.
         st.markdown("""
 Designed for theoretical exploration. Uses synthetic layouts and
 GEV-generated flood levels. Noise toggles allow turning on or off:
-- **PMT threshold heterogeneity** (truncated Normal vs. homogeneous)
+- **PMT threshold heterogeneity** (clipped Normal vs. homogeneous)
 - **Elevation noise** (random perturbation of the elevation gradient)
 
 Useful for sensitivity analysis and understanding how each model
@@ -882,8 +881,9 @@ Designed for application to a specific site. Upload:
 - Amini, E., Madajewicz, M., Orton, P., Srikrishnan, V., & Yanez Mena, P. (2025). Social Learning and Flood Adaptation via an Agent-Based Model. Poster presented at AGU Fall Meeting 2025, Washington, D.C.
 - Coles, S. (2001). *An Introduction to Statistical Modeling of Extreme Values*. Springer.
 - Ester, M., Kriegel, H.-P., Sander, J., & Xu, X. (1996). A density-based algorithm for discovering clusters in large spatial databases with noise. *KDD-96*, 226–231.
-- Hosking, J. R. M., & Wallis, J. R. (1997). *Regional Frequency Analysis*. Cambridge University Press.
-- Jaccard, P. (1912). The distribution of the flora in the alpine zone. *New Phytologist*, 11(2), 37–50.
+- Good, I. J. (1950). *Probability and the Weighing of Evidence*. Charles Griffin, London.
+- Gower, J. C. (1971). A general coefficient of similarity and some of its properties. *Biometrics*, 27(4), 857–871.
+- Granovetter, M. (1978). Threshold models of collective behavior. *American Journal of Sociology*, 83(6), 1420–1443.
 - Jaynes, E. T. (2003). *Probability Theory: The Logic of Science*. Cambridge University Press.
 - Kass, R. E., & Raftery, A. E. (1995). Bayes Factors. *Journal of the American Statistical Association*, 90(430), 773–795.
 - Kazil, J., Masad, D., & Crooks, A. (2020). Utilizing Python for Agent-Based Modeling: The Mesa Framework. Springer.

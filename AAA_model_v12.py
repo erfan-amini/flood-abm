@@ -15,20 +15,24 @@ Three evidence channels:
      (availability heuristic, Tversky & Kahneman, 1974).
   2. Proximity-based social learning (LAMBDA_SOCIAL):
      Binary connection: connected neighbors who retrofit deliver
-     the full Bayes factor (McPherson et al., 2001).
+     the full Bayes factor (Granovetter, 1978).
   3. Similarity-based social learning (LAMBDA_SIMILARITY):
-     Within DBSCAN-identified neighborhoods (Ester et al., 1996),
-     Jaccard attribute similarity (Jaccard, 1912) scales the factor:
+     Within DBSCAN-identified neighborhoods (Ester et al., 1996), the
+     attribute similarity coefficient S(i,j) (Gower, 1971) scales the
+     factor through an exponent on the Bayes factor, i.e. a weight of
+     evidence proportional to S (Good, 1950; McPherson et al., 2001):
      effective = LAMBDA_SIMILARITY ^ S(i,j).
 
 References:
 -----------
 Jaynes (2003), Probability Theory: The Logic of Science, Ch. 4.
 Kass & Raftery (1995), Bayes Factors, JASA, 90(430), 773-795.
+Good (1950), Probability and the Weighing of Evidence.
 Tversky & Kahneman (1974), Judgment under Uncertainty.
 Rogers (1975), A protection motivation theory of fear appeals.
+Granovetter (1978), Threshold Models of Collective Behavior, AJS.
 McPherson et al. (2001), Birds of a feather: Homophily.
-Jaccard (1912), Distribution of the flora in the alpine zone.
+Gower (1971), A general coefficient of similarity, Biometrics 27(4).
 Ester et al. (1996), A density-based algorithm (DBSCAN), KDD-96.
 
 See User_Manual_v12.docx for full documentation.
@@ -71,7 +75,7 @@ N_CONNECTORS = 2               # Bridge agents between neighborhoods (0=plain gr
 SLOPE = 0.2                    # Land elevation gradient (elevation = slope * x)
 NOISE_FACTOR = 0.05            # Elevation noise as fraction of slope
 
-# --- Agent Attributes (Jaccard, 1912; McPherson et al., 2001) ---
+# --- Agent Attributes (Gower, 1971; McPherson et al., 2001) ---
 ENABLE_HETEROGENEITY = True    # False = all identical (S=1 for all pairs)
 N_ATTRIBUTES = 2               # Attributes per agent
 N_CLASSES = 3                  # Categories per attribute
@@ -100,18 +104,20 @@ LAMBDA_FLOOD = 1.20            # Bayes factor per flood event
 # deliver the full Bayes factor. No distance weighting.
 LAMBDA_SOCIAL = 1.50           # Bayes factor per connected neighbor retrofit
 
-# --- Channel 3: Similarity-Based Social Learning (Jaccard, 1912) ---
-# Within DBSCAN neighborhoods (Ester et al., 1996), attribute similarity
-# scales the Bayes factor: effective = LAMBDA_SIMILARITY ^ S(i,j).
+# --- Channel 3: Similarity-Based Social Learning (Gower, 1971) ---
+# Within DBSCAN neighborhoods (Ester et al., 1996), the similarity
+# coefficient S(i,j) scales the Bayes factor through an exponent
+# (a weight of evidence proportional to S; Good, 1950):
+#   effective = LAMBDA_SIMILARITY ^ S(i,j).
 # S=1 (identical attributes) gives full factor; S=0 gives no update.
 LAMBDA_SIMILARITY = 3.00       # Bayes factor at full similarity (S=1)
 
 # --- Protection Motivation Theory (Rogers, 1975) ---
-# Heterogeneous thresholds: truncated Normal distribution
+# Heterogeneous thresholds: Normal draw clipped to [LOW, HIGH]
 PMT_THRESHOLD_MEAN = 0.50      # Population mean threshold
 PMT_THRESHOLD_STD = 0.00       # Standard deviation (0 = homogeneous)
-PMT_THRESHOLD_LOW = 0.50       # Hard lower bound (truncation)
-PMT_THRESHOLD_HIGH = 0.50      # Hard upper bound (truncation)
+PMT_THRESHOLD_LOW = 0.50       # Clip lower bound
+PMT_THRESHOLD_HIGH = 0.50      # Clip upper bound
 
 # --- Flood (GEV - Coles, 2001) ---
 RETURN_PERIODS = [10, 20, 50, 100]
@@ -161,7 +167,7 @@ def save_parameters(output_dir):
         f.write(f"SLOPE                  = {SLOPE}\n")
         f.write(f"NOISE_FACTOR           = {NOISE_FACTOR}\n\n")
 
-        f.write("AGENT ATTRIBUTES (Jaccard, 1912)\n" + "-" * 40 + "\n")
+        f.write("AGENT ATTRIBUTES (Gower, 1971)\n" + "-" * 40 + "\n")
         f.write(f"ENABLE_HETEROGENEITY   = {ENABLE_HETEROGENEITY}\n")
         f.write(f"N_ATTRIBUTES           = {N_ATTRIBUTES}\n")
         f.write(f"N_CLASSES              = {N_CLASSES}\n\n")
@@ -310,11 +316,11 @@ class HouseholdAgent(mesa.Agent):
         Two-channel social Bayesian update (one-shot per neighbor).
 
         For each connected neighbor newly observed as retrofitted:
-          Channel 2 — Proximity (McPherson et al., 2001):
+          Channel 2 — Proximity (Granovetter, 1978):
             odds *= LAMBDA_SOCIAL (full factor, binary connection)
-          Channel 3 — Similarity (Jaccard, 1912):
+          Channel 3 — Similarity (Gower, 1971; Good, 1950):
             if both agents share the same DBSCAN neighborhood:
-              S = Jaccard similarity between attribute vectors
+              S = similarity coefficient between attribute vectors
               odds *= LAMBDA_SIMILARITY ^ S
             if in different neighborhoods or either is isolated (-1):
               no similarity update
@@ -630,14 +636,14 @@ def plot_spatial_retrofit_map(model, output_dir):
 
 
 def plot_similarity_distribution(model, output_dir):
-    """Distribution of Jaccard similarities on network edges (Jaccard, 1912)."""
+    """Distribution of similarity coefficients on network edges (Gower, 1971)."""
     sims = [d["similarity"] for _, _, d in model.G.edges(data=True)]
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.hist(sims, bins=30, color="steelblue", edgecolor="black", alpha=0.8)
     ax.axvline(np.mean(sims), color="red", linestyle="--", linewidth=2,
                label=f"Mean = {np.mean(sims):.3f}")
-    ax.set(xlabel="Jaccard Similarity S(i,j)", ylabel="Frequency",
-           title="Distribution of Attribute Similarity (Jaccard, 1912)")
+    ax.set(xlabel="Similarity Coefficient S(i,j)", ylabel="Frequency",
+           title="Distribution of Attribute Similarity (Gower, 1971)")
     ax.legend(); ax.grid(True, alpha=0.3, axis="y")
     plt.tight_layout()
     path = os.path.join(output_dir, "similarity_distribution.png")

@@ -9,8 +9,8 @@ References:
 1. GEV Distribution: Coles (2001), An Introduction to Statistical Modeling
    of Extreme Values, Springer, Chapter 3.
 2. Block Maxima Method: Gumbel (1958), Statistics of Extremes.
-3. Flood Frequency Analysis: Hosking & Wallis (1997), Regional Frequency
-   Analysis, Cambridge University Press.
+3. Return period / probability: Stedinger et al. (1993), Frequency
+   Analysis of Extreme Events, Handbook of Hydrology, Chapter 18.
 """
 
 import numpy as np
@@ -43,9 +43,12 @@ def gev_quantile(p, loc, scale, shape):
 
 def fit_gev_to_return_periods(return_periods, flood_levels):
     """
-    Fit GEV to return period-flood level pairs (Hosking & Wallis, 1997).
+    Fit GEV parameters by least squares to the user-specified
+    (return period, flood level) points.
 
-    Uses constrained optimization to ensure non-negative flood values.
+    The GEV quantile function (Coles, 2001) is matched to the target
+    flood levels by minimizing squared error, with a soft penalty
+    keeping low quantiles non-negative.
     """
     rp = np.asarray(return_periods)
     fl = np.asarray(flood_levels)

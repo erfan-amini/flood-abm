@@ -5,13 +5,14 @@ Builds a social network with binary connections: agents within
 DISTANCE_THRESHOLD are connected; agents beyond it are not.
 No distance decay is applied to edge weights.
 
-Each edge stores the Jaccard similarity S(i,j) between the two
-agents' attribute vectors (Jaccard, 1912), used by the similarity-
-based learning channel in the main model.
+Each edge stores the attribute similarity coefficient S(i,j) between
+the two agents' attribute vectors (Gower, 1971), used by the
+similarity-based learning channel in the main model.
 
 References:
 -----------
-Jaccard (1912), The distribution of the flora in the alpine zone.
+Gower (1971), A general coefficient of similarity and some of its
+    properties. Biometrics, 27(4), 857-871.
 McPherson et al. (2001), Birds of a feather: Homophily in social networks.
 """
 
@@ -19,7 +20,7 @@ import numpy as np
 import networkx as nx
 import pandas as pd
 from scipy.spatial.distance import cdist
-from FFF_attributes import jaccard_similarity
+from FFF_attributes import similarity_coefficient
 
 
 class NetworkBuilder:
@@ -30,11 +31,11 @@ class NetworkBuilder:
     An edge exists between i and j if d(i,j) <= distance_threshold.
     Each edge stores:
       - distance: Euclidean distance between agents
-      - similarity: Jaccard similarity S(i,j) (Jaccard, 1912)
+      - similarity: attribute similarity coefficient S(i,j) (Gower, 1971)
 
     Uses scipy.spatial.distance.cdist for vectorized distance
-    computation and numpy broadcasting for vectorized Jaccard
-    similarity.
+    computation and numpy broadcasting for vectorized similarity
+    coefficients.
     """
 
     def __init__(self, positions, attributes,
@@ -59,7 +60,7 @@ class NetworkBuilder:
         mask = rows < cols
         rows, cols = rows[mask], cols[mask]
 
-        # Distances and Jaccard similarity for all candidate edges
+        # Distances and similarity coefficients for all candidate edges
         d_all = dist_matrix[rows, cols]
         attr_i = self.attributes[rows]
         attr_j = self.attributes[cols]
@@ -80,7 +81,7 @@ class NetworkBuilder:
                 if i == j or G.has_edge(i, j):
                     continue
                 d = dist_matrix[i, j]
-                S = jaccard_similarity(self.attributes[i], self.attributes[j])
+                S = similarity_coefficient(self.attributes[i], self.attributes[j])
                 G.add_edge(i, j, distance=d,
                            similarity=S, edge_type="user_defined")
 

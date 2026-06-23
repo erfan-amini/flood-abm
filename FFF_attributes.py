@@ -1,8 +1,13 @@
 """
 Flood Adaptation ABM - Agent Attributes Module (v10)
 
-Generates agent attributes and computes Jaccard similarity.
-Ref: Jaccard (1912). See User_Manual_v10.docx for details.
+Generates agent attributes and computes the attribute similarity
+coefficient S(i,j): the fraction of attributes on which two agents
+agree. For all-categorical attributes this is Gower's general
+coefficient of similarity.
+
+Reference: Gower (1971), A general coefficient of similarity and some
+of its properties, Biometrics, 27(4), 857-871.
 """
 
 import numpy as np
@@ -12,11 +17,11 @@ import numpy as np
 # SIMILARITY FUNCTION
 # ============================================================================
 
-def jaccard_similarity(attr_a, attr_b):
+def similarity_coefficient(attr_a, attr_b):
     """
-    Compute Jaccard similarity between two attribute vectors.
-
-    Reference: Jaccard (1912).
+    Attribute similarity S(i,j): fraction of attributes on which two
+    agents agree. For all-categorical attributes this equals Gower's
+    general coefficient of similarity (Gower, 1971).
     """
     matches = np.sum(np.asarray(attr_a) == np.asarray(attr_b))
     return matches / len(attr_a)
@@ -82,7 +87,7 @@ if __name__ == "__main__":
     attrs_off = gen_off.generate()
     print(f"\nHeterogeneity OFF:")
     print(f"  Agent 0: {attrs_off[0]}")
-    print(f"  Similarity(0,1): {jaccard_similarity(attrs_off[0], attrs_off[1]):.2f}")
+    print(f"  Similarity(0,1): {similarity_coefficient(attrs_off[0], attrs_off[1]):.2f}")
 
     gen_on = AttributeGenerator(n_agents=5, n_attributes=5, n_classes=5,
                                 enable_heterogeneity=True, rng=rng)
@@ -90,4 +95,4 @@ if __name__ == "__main__":
     print(f"\nHeterogeneity ON:")
     print(f"  Agent 0: {attrs_on[0]}")
     print(f"  Agent 1: {attrs_on[1]}")
-    print(f"  Similarity(0,1): {jaccard_similarity(attrs_on[0], attrs_on[1]):.2f}")
+    print(f"  Similarity(0,1): {similarity_coefficient(attrs_on[0], attrs_on[1]):.2f}")
