@@ -339,6 +339,28 @@ else:
     pmt_low = st.sidebar.slider("Lower Bound", 0.10, 0.90, 0.50, 0.01)
     pmt_high = st.sidebar.slider("Upper Bound", 0.10, 0.95, 0.50, 0.01)
 
+# --- Initial Adopters / Seeds (Rogers, 2003; Amini et al., 2025) ---
+st.sidebar.divider()
+st.sidebar.header("🌱 Initial Adopters")
+
+initial_retrofit_pct = st.sidebar.slider(
+    "Pre-Retrofitted Homes (%)", 0, 50, 13, 1,
+    help=("Percentage of homes already retrofitted at t=0, before any "
+          "flood (innovators; Rogers, 2003). The 13% default matches the "
+          "observed retrofit rate among never-flooded households "
+          "(Amini et al., 2025)."))
+
+if mode == "Case Study Mode":
+    seed_method = st.sidebar.radio(
+        "Which homes are pre-retrofitted?",
+        ["Lowest elevation", "By ID (CSV column)"],
+        help=("**Lowest elevation**: most flood-exposed homes (as in "
+              "research mode).\n\n**By ID**: homes flagged 1 in the input "
+              "CSV column `pre_retrofitted`."))
+    case_study_seed_by_id = (seed_method == "By ID (CSV column)")
+else:
+    case_study_seed_by_id = False
+
 # --- Agent Attributes (sidebar) ---
 st.sidebar.divider()
 st.sidebar.header("🧬 Agent Attributes")
@@ -595,7 +617,29 @@ histories, representing variation in self-efficacy and perceived
 response costs (Rogers, 1975).
 """)
 
-    st.subheader("3.7 &nbsp; Flood Generation — GEV Distribution")
+    st.subheader("3.7 &nbsp; Initial Adopters — Seeding Before Any Flood")
+    st.markdown("""
+A fixed fraction of homes begins the simulation already retrofitted at
+$t = 0$, before any flood is experienced. These **innovators / early
+adopters** adopt independently of the model's evidence channels and act
+as seeds for the social-learning channels (Rogers, 2003). The default
+fraction of **13%** matches the observed retrofit rate among households
+with *zero* flood experience (Amini et al., 2025) — the "0 floods" bin
+of the observed data.
+
+Which homes are seeded is determined as follows:
+- **Research mode** (and the default case-study option): homes are sorted
+  by elevation and the lowest-elevation — most flood-exposed — homes are
+  seeded. If more homes share the lowest elevation than are needed, the
+  seeds are drawn at random from among those tied homes.
+- **Case study mode, by ID**: homes flagged with `1` in the input CSV
+  column `pre_retrofitted` are seeded.
+
+Because seeds are flagged before the loop begins, the adoption curve
+starts at the seeded fraction rather than at zero.
+""")
+
+    st.subheader("3.8 &nbsp; Flood Generation — GEV Distribution")
     st.markdown("""
 Annual flood levels are sampled from a Generalized Extreme Value (GEV)
 distribution with CDF:
@@ -612,7 +656,7 @@ $\\xi$ the shape. The parameters are fitted to user-defined return-period
 single global flood level $f_t$ is drawn and clipped to $[0, 1]$.
 """)
 
-    st.subheader("3.8 &nbsp; Edge Attributes — Similarity Coefficient")
+    st.subheader("3.9 &nbsp; Edge Attributes — Similarity Coefficient")
     st.markdown("""
 Each network edge stores the similarity coefficient
 $S(i,j) = |\\{k : a_{i,k} = a_{j,k}\\}| / K$. Connections are binary:
@@ -620,7 +664,7 @@ agents within `DISTANCE_THRESHOLD` are connected; agents beyond it are
 not. No distance decay weighting is applied to edges.
 """)
 
-    st.subheader("3.9 &nbsp; Neighborhood Identification — DBSCAN")
+    st.subheader("3.10 &nbsp; Neighborhood Identification — DBSCAN")
     st.markdown("""
 Spatial neighborhoods are identified using DBSCAN with
 $\\varepsilon$ = `DISTANCE_THRESHOLD` and `min_samples` =
@@ -815,6 +859,13 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | `LAMBDA_SIMILARITY` | 2.50 | Bayes factor at full similarity ($S=1$). Scaled: $\\lambda_{\\text{similarity}}^{S(i,j)}$. |
 """)
 
+    st.markdown("""
+| Parameter | Default | Description |
+|:---|:---:|:---|
+| `INITIAL_RETROFIT_FRACTION` | 0.13 | Fraction of homes already retrofitted at $t=0$, before any flood (innovators; Rogers, 2003). |
+| `CASE_STUDY_SEED_BY_ID` | False | Case study only. False = seed lowest-elevation homes; True = seed homes flagged in the CSV `pre_retrofitted` column. |
+""")
+
     st.subheader("9.2 &nbsp; PMT Threshold Parameters")
     st.markdown("""
 | Parameter | Default | Description |
@@ -870,6 +921,13 @@ Designed for application to a specific site. Upload:
     with col_loc:
         st.markdown("**Location file** (required):")
         st.code("x,y,z\n0.12,0.45,0.03\n0.15,0.47,0.04\n...", language="csv")
+        st.markdown("""
+*Optional column* `pre_retrofitted` (0/1): flags homes already
+retrofitted at $t=0$. Used only when **By ID** is selected for initial
+adopters; otherwise the lowest-elevation homes are seeded.
+""")
+        st.code("x,y,z,pre_retrofitted\n0.12,0.45,0.03,1\n"
+                "0.15,0.47,0.04,0\n...", language="csv")
     with col_fld:
         st.markdown("**Flood time series** (optional):")
         st.code("flood_level\n0.02\n0.00\n0.08\n...", language="csv")
@@ -889,6 +947,7 @@ Designed for application to a specific site. Upload:
 - Kazil, J., Masad, D., & Crooks, A. (2020). Utilizing Python for Agent-Based Modeling: The Mesa Framework. Springer.
 - McPherson, M., Smith-Lovin, L., & Cook, J. M. (2001). Birds of a feather: Homophily in social networks. *Annual Review of Sociology*, 27, 415–444.
 - Rogers, R. W. (1975). A protection motivation theory of fear appeals and attitude change. *Journal of Psychology*, 91(1), 93–114.
+- Rogers, E. M. (2003). *Diffusion of Innovations* (5th ed.). Free Press.
 - Tversky, A., & Kahneman, D. (1974). Judgment under uncertainty: Heuristics and biases. *Science*, 185(4157), 1124–1131.
 """)
 
@@ -986,6 +1045,8 @@ def apply_params():
     M.PMT_THRESHOLD_STD = pmt_std
     M.PMT_THRESHOLD_LOW = pmt_low
     M.PMT_THRESHOLD_HIGH = pmt_high
+    M.INITIAL_RETROFIT_FRACTION = initial_retrofit_pct / 100.0
+    M.CASE_STUDY_SEED_BY_ID = case_study_seed_by_id
     M.RETURN_PERIODS = return_periods
     M.FLOOD_LEVELS = flood_levels
     M.OBSERVED_BINS = observed_bins
@@ -1244,6 +1305,7 @@ with tab_sim:
     c3.metric("PMT Threshold", f"{pmt_mean:.2f}")
     c4.metric("Initial Belief — $P(H_1)$", f"{initial_belief:.2f}")
     c4.metric("Mode", mode.replace(" Mode", ""))
+    c1.metric("Pre-Retrofitted at $t=0$", f"{initial_retrofit_pct}%")
 
     st.divider()
 

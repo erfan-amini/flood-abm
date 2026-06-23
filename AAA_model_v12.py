@@ -31,6 +31,7 @@ Good (1950), Probability and the Weighing of Evidence.
 Tversky & Kahneman (1974), Judgment under Uncertainty.
 Rogers (1975), A protection motivation theory of fear appeals.
 Granovetter (1978), Threshold Models of Collective Behavior, AJS.
+Rogers (2003), Diffusion of Innovations, 5th ed. (initial adopters / innovators).
 McPherson et al. (2001), Birds of a feather: Homophily.
 Gower (1971), A general coefficient of similarity, Biometrics 27(4).
 Ester et al. (1996), A density-based algorithm (DBSCAN), KDD-96.
@@ -119,6 +120,20 @@ PMT_THRESHOLD_STD = 0.00       # Standard deviation (0 = homogeneous)
 PMT_THRESHOLD_LOW = 0.50       # Clip lower bound
 PMT_THRESHOLD_HIGH = 0.50      # Clip upper bound
 
+# --- Initial Adopters / Seeds (Rogers, 2003; Amini et al., 2025) ---
+# Fraction of homes already retrofitted at t=0, BEFORE any flood is
+# experienced. These early adopters ("innovators", Rogers, 2003) adopt
+# independently of the modeled triggers and seed the social-learning
+# channels for the rest of the population. The 0.13 default matches the
+# observed retrofit rate among households with zero flood experience
+# (Amini et al., 2025; the "0 floods" bin in OBSERVED_RATES below).
+INITIAL_RETROFIT_FRACTION = 0.13   # 0.13 = 13% pre-retrofitted at t=0
+
+# Case-study selection of which homes are the pre-retrofitted ones:
+#   False = lowest-elevation (most flood-exposed) homes, as in research mode
+#   True  = homes flagged with 1 in the input CSV column 'pre_retrofitted'
+CASE_STUDY_SEED_BY_ID = False
+
 # --- Flood (GEV - Coles, 2001) ---
 RETURN_PERIODS = [10, 20, 50, 100]
 FLOOD_LEVELS = [0.05, 0.10, 0.15, 0.30]
@@ -190,6 +205,10 @@ def save_parameters(output_dir):
         f.write(f"PMT_THRESHOLD_STD      = {PMT_THRESHOLD_STD}\n")
         f.write(f"PMT_THRESHOLD_LOW      = {PMT_THRESHOLD_LOW}\n")
         f.write(f"PMT_THRESHOLD_HIGH     = {PMT_THRESHOLD_HIGH}\n\n")
+
+        f.write("INITIAL ADOPTERS / SEEDS (Rogers, 2003)\n" + "-" * 40 + "\n")
+        f.write(f"INITIAL_RETROFIT_FRACTION = {INITIAL_RETROFIT_FRACTION}\n")
+        f.write(f"CASE_STUDY_SEED_BY_ID     = {CASE_STUDY_SEED_BY_ID}\n\n")
 
         f.write("FLOOD (GEV - Coles, 2001)\n" + "-" * 40 + "\n")
         f.write(f"RETURN_PERIODS         = {RETURN_PERIODS}\n")
@@ -417,6 +436,41 @@ class FloodAdaptationModel(mesa.Model):
                 neighborhood_id=int(self.neighborhood_labels[i]))
             self.grid.place_agent(agent, i)
             self.agents_by_node[i] = agent
+
+        # Seed initial adopters who retrofitted before any flood (Rogers, 2003)
+        self._seed_initial_adopters()
+
+    def _seed_initial_adopters(self):
+        """
+        Flag a fraction of homes as already retrofitted at t = 0, before any
+        flood is experienced (Rogers, 2003: innovators / early adopters that
+        adopt independently of the modeled triggers). These homes seed the
+        social-learning channels for the rest of the population.
+
+        Selection of the seeded homes:
+          * By elevation (research mode, and the default case-study option):
+            the lowest-elevation, most flood-exposed homes are chosen. When
+            several homes tie at the cutoff elevation, the seeds are drawn at
+            random from among the tied homes (random tie-breaking via lexsort).
+          * By ID (case-study option CASE_STUDY_SEED_BY_ID = True): the homes
+            flagged with 1 in the input CSV column 'pre_retrofitted' are used.
+        """
+        n_seed = int(round(INITIAL_RETROFIT_FRACTION * self.n_agents))
+
+        if SPATIAL_MODE == 0 and CASE_STUDY_SEED_BY_ID:
+            flags = pd.read_csv(CSV_PATH)["pre_retrofitted"].values
+            seed_nodes = np.where(flags == 1)[0]
+        else:
+            # Sort homes by elevation ascending; the random secondary key
+            # breaks ties so exactly n_seed homes are drawn from the lowest level.
+            tiebreak = self.rng.random(self.n_agents)
+            order = np.lexsort((tiebreak, self.elevations))
+            seed_nodes = order[:n_seed]
+
+        for node in seed_nodes:
+            agent = self.agents_by_node[int(node)]
+            agent.is_retrofitted = True
+            agent.retrofit_step = 0       # adopted at t=0 (before the loop)
 
     def step(self):
         self.current_step += 1
