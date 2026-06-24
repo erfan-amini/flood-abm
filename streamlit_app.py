@@ -102,6 +102,10 @@ section[data-testid="stSidebar"] input[type="number"],
 section[data-testid="stSidebar"] .stNumberInput input {
     color: #1C2833 !important;
 }
+section[data-testid="stSidebar"] input[type="text"],
+section[data-testid="stSidebar"] .stTextInput input {
+    color: #1C2833 !important;
+}
 section[data-testid="stSidebar"] .stFileUploader div,
 section[data-testid="stSidebar"] .stFileUploader span,
 section[data-testid="stSidebar"] .stFileUploader small,
@@ -310,10 +314,10 @@ st.sidebar.header("📐 Bayesian Updating")
 initial_belief = st.sidebar.slider(
     "Initial Belief  —  $P(H_1)$", 0.01, 0.50, 0.05, 0.01)
 lambda_flood_str = st.sidebar.text_input(
-    "Flood Experience  —  $\\lambda_{\\mathrm{flood}}$ per flood [1st, 2nd, 3rd, 4th+]",
-    "1.25, 1.25, 1.25, 1.25",
-    help=("Bayes factor for the 1st, 2nd, 3rd, and 4th-and-later flood. "
-          "Front-load the early values to make the first floods dominate."))
+    "Flood Experience  —  $\\lambda_{\\mathrm{flood}}$  [1st flood, rest]",
+    "1.25, 1.25",
+    help=("Two Bayes factors: the first flood, then every later flood. "
+          "Raise the first value to make the initial experience dominate."))
 lambda_flood_seq = [float(x.strip()) for x in lambda_flood_str.split(",")]
 lambda_social = st.sidebar.slider(
     "Proximity Learning  —  $\\lambda_{\\mathrm{social}}$",
@@ -522,11 +526,11 @@ $\\lambda_{\\text{flood}}^{(k)}$, taken from the sequence `LAMBDA_FLOOD_SEQ`
 \end{cases}
 """)
     st.markdown("""
-Assigning a larger factor to the first one or two floods lets early
-experiences dominate, which can reproduce a steep rise in retrofit rate
-with the first floods. Setting every entry equal recovers the
+Assigning a larger factor to the first flood lets the initial
+experience dominate, which can reproduce a steep rise in retrofit rate
+with the first flood. Setting both entries equal recovers the
 constant-factor model. The default
-`LAMBDA_FLOOD_SEQ = [1.25, 1.25, 1.25, 1.25]` means each flood increases
+`LAMBDA_FLOOD_SEQ = [1.25, 1.25]` means each flood increases
 the odds by 25%, so an agent must experience several floods before belief
 approaches the decision threshold, consistent with observed low adoption
 despite repeated flooding (Amini et al., 2025).
@@ -863,7 +867,7 @@ same exposure may adopt at different times due to individual PMT thresholds.
 | Parameter | Default | Description |
 |:---|:---:|:---|
 | `INITIAL_BELIEF` | 0.05 | Prior $P(H_1)$. Agents begin with mild awareness. |
-| `LAMBDA_FLOOD_SEQ` | [1.25,1.25,1.25,1.25] | Bayes factor for the 1st, 2nd, 3rd, 4th+ flood (per-flood experience). |
+| `LAMBDA_FLOOD_SEQ` | [1.25, 1.25] | Bayes factor for the 1st flood and for every later flood. |
 | `LAMBDA_SOCIAL` | 1.20 | Bayes factor per connected neighbor retrofit (proximity). |
 | `LAMBDA_SIMILARITY` | 2.50 | Bayes factor at full similarity ($S=1$). Scaled: $\\lambda_{\\text{similarity}}^{S(i,j)}$. |
 """)

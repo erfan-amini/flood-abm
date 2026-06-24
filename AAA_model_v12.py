@@ -100,10 +100,11 @@ INITIAL_BELIEF = 0.05          # Prior P(H1): mild awareness in flood zone
 # shift belief; safe years leave belief unchanged.
 # Each flood is a distinct piece of evidence whose Bayes factor need not
 # be identical (Kass & Raftery, 1995). LAMBDA_FLOOD_SEQ gives the factor
-# for the 1st, 2nd, 3rd, and 4th-and-later flood. Front-loading the early
-# entries makes the first experiences dominate (Tversky & Kahneman, 1974);
-# setting all entries equal recovers the constant-factor model.
-LAMBDA_FLOOD_SEQ = [1.20, 1.20, 1.20, 1.20]   # Bayes factor: [1st, 2nd, 3rd, 4th+] flood
+# for the 1st flood and for every later flood. A larger first entry makes
+# the initial experience dominate (Tversky & Kahneman, 1974); equal
+# entries recover the constant-factor model. The last entry is reused for
+# all floods beyond the list, so two values are enough here.
+LAMBDA_FLOOD_SEQ = [1.20, 1.20]   # Bayes factor: [1st flood, all later floods]
 
 # --- Channel 2: Proximity-Based Social Learning ---
 # Binary: connected neighbors (within DISTANCE_THRESHOLD) who retrofit
