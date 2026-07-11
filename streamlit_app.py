@@ -1586,6 +1586,159 @@ def _page_documentation():
 # MAIN
 # ---------------------------------------------------------------------------
 
+def _workflow_svg():
+    """Professional SVG flowchart of the model workflow (ADAPT palette)."""
+    C1, C2, C3 = "#0ea5e9", "#22c55e", "#f97316"   # three channels
+    SKY, SKYD, INK, MUT = "#0ea5e9", "#0284c7", "#0f172a", "#64748b"
+    GRN, RED, SLATE = "#22c55e", "#ef4444", "#e2e8f0"
+
+    def box(x, y, w, h, fill, stroke, title, sub, tcol="#ffffff", rx=12):
+        s = (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{rx}" '
+             f'fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
+        s += (f'<text x="{x+w/2}" y="{y+(h/2 if not sub else h/2-8)}" '
+              f'text-anchor="middle" dominant-baseline="middle" '
+              f'font-size="15" font-weight="700" fill="{tcol}">{title}</text>')
+        if sub:
+            s += (f'<text x="{x+w/2}" y="{y+h/2+12}" text-anchor="middle" '
+                  f'dominant-baseline="middle" font-size="11.5" '
+                  f'fill="{tcol}" opacity="0.9">{sub}</text>')
+        return s
+
+    def arrow(x1, y1, x2, y2, color=MUT, dash=""):
+        d = f'stroke-dasharray="{dash}"' if dash else ""
+        return (f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color}" '
+                f'stroke-width="2" marker-end="url(#ah)" {d}/>')
+
+    svg = f'''<svg viewBox="0 0 940 620" xmlns="http://www.w3.org/2000/svg"
+      font-family="'Source Sans Pro',system-ui,sans-serif">
+      <defs>
+        <marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3"
+                orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L8,3 L0,6 Z" fill="{MUT}"/>
+        </marker>
+        <linearGradient id="gInk" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="{INK}"/><stop offset="1" stop-color="#1e293b"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Stage 1: setup -->
+      {box(360, 20, 220, 56, "url(#gInk)", INK,
+           "Initialise settlement", "households, elevation, network")}
+      {arrow(470, 76, 470, 108)}
+
+      <!-- Stage 2: assign traits + prior -->
+      {box(330, 110, 280, 56, "#f1f5f9", "#cbd5e1",
+           "Assign static traits &amp; prior belief",
+           "expects-rising-damage, trusted-info, forecast-prep", INK)}
+      {arrow(470, 166, 470, 198)}
+
+      <!-- Stage 3: information prior (Channel 3) fires once at t=0 -->
+      {box(340, 200, 260, 52, C3, "#c2610c",
+           "Channel 3 \u00b7 Information (t=0)", "one-time informational prior")}
+      {arrow(470, 252, 470, 284)}
+
+      <!-- time-step loop label -->
+      <rect x="70" y="286" width="800" height="212" rx="16" fill="none"
+            stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6 5"/>
+      <text x="86" y="306" font-size="12.5" font-weight="700" fill="{MUT}"
+            letter-spacing="0.5">EACH TIME STEP (YEAR)</text>
+
+      <!-- flood draw -->
+      {box(360, 300, 220, 50, "#e0f2fe", SKY,
+           "Draw annual flood", "GEV sample fₜ", INK)}
+      {arrow(470, 350, 470, 378)}
+
+      <!-- two channels row -->
+      {box(150, 380, 250, 62, C1, "#0369a1",
+           "Channel 1 \u00b7 Flood experience",
+           "if flooded: \u03bb_flood \u00d7 \u03bb_risk_expectation")}
+      {box(540, 380, 250, 62, C2, "#15803d",
+           "Channel 2 \u00b7 Proximity",
+           "per retrofitted neighbour: \u03bb_social \u00d7 \u03bb_similarity")}
+      {arrow(470, 350, 275, 380)}
+      {arrow(470, 350, 665, 380)}
+
+      <!-- update belief -->
+      {arrow(275, 442, 430, 470)}
+      {arrow(665, 442, 510, 470)}
+      {box(360, 462, 220, 46, "#f8fafc", "#cbd5e1",
+           "Update belief  P(H₁)", "odds \u00d7 Bayes factors", INK)}
+
+      <!-- decision -->
+      {arrow(470, 508, 470, 536)}
+      <polygon points="470,536 590,566 470,596 350,566" fill="#fff7ed"
+               stroke="{C3}" stroke-width="1.5"/>
+      <text x="470" y="562" text-anchor="middle" font-size="13.5"
+            font-weight="700" fill="{INK}">P(H\u2081) \u2265 \u03b8 ?</text>
+      <text x="470" y="580" text-anchor="middle" font-size="11" fill="{MUT}">PMT threshold</text>
+
+      <!-- yes -> retrofit -->
+      {arrow(590, 566, 690, 566, GRN)}
+      {box(690, 540, 170, 52, "#dcfce7", GRN,
+           "Retrofit (absorbing)", "leaves risk pool", INK)}
+      <text x="640" y="558" text-anchor="middle" font-size="11"
+            font-weight="700" fill="{GRN}">yes</text>
+
+      <!-- no -> next step (loop back) -->
+      {arrow(350, 566, 250, 566, MUT)}
+      <text x="300" y="558" text-anchor="middle" font-size="11"
+            font-weight="700" fill="{MUT}">no</text>
+      <text x="140" y="562" text-anchor="middle" font-size="11.5"
+            fill="{MUT}" font-style="italic">carry belief<tspan x="140" dy="14">to next year</tspan></text>
+
+      <!-- compare to survey -->
+      {arrow(775, 592, 775, 596)}
+      {box(690, 596, 170, 0, "none", "none", "", "")}
+    </svg>'''
+    return svg
+
+
+def _page_home():
+    import streamlit as st
+    st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='font-size:2.1rem;font-weight:800;color:{CLR_INK};"
+        "line-height:1.2;margin-bottom:0.2rem;'>Flood Mitigation "
+        "Agent-based Model</div>"
+        f"<div style='font-size:1.05rem;color:{CLR_MUTED};margin-bottom:1.1rem;'>"
+        "A household decision model of flood-retrofit adoption, grounded in "
+        "Bayesian belief updating and Protection Motivation Theory.</div>",
+        unsafe_allow_html=True)
+
+    st.markdown(
+        "This tool simulates how households along a flood-exposed coastline "
+        "decide whether to retrofit their homes. Each household holds a belief "
+        "that it should retrofit and updates that belief as evidence arrives "
+        "through three channels \u2014 **personal flood experience**, **social "
+        "influence from retrofitted neighbours**, and **trusted information** "
+        "\u2014 acting once its belief crosses a personal decision threshold. The "
+        "model is calibrated to the NYC Flood Vulnerability Index Survey and is "
+        "designed for both controlled experiments (Research mode) and "
+        "real-data scenarios (Case Study mode).")
+
+    st.markdown(f"<div style='font-size:1.25rem;font-weight:800;color:{CLR_INK};"
+                f"border-bottom:2px solid {CLR_SKY};padding-bottom:0.3rem;"
+                "margin:1.4rem 0 1rem 0;'>How the model works</div>",
+                unsafe_allow_html=True)
+    # Embed the SVG as a base64 data-URI <img>; Streamlit's markdown sanitiser
+    # strips raw inline <svg>, but allows an <img> with a data URI.
+    import base64
+    svg = _workflow_svg()
+    b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    st.markdown(
+        f"<img src='data:image/svg+xml;base64,{b64}' "
+        "style='width:100%;max-width:960px;height:auto;display:block;"
+        "margin:0 auto;'/>", unsafe_allow_html=True)
+
+    st.markdown(
+        f"<div style='margin-top:1.2rem;padding:0.8rem 1rem;background:#f8fafc;"
+        f"border-left:3px solid {CLR_SKY};border-radius:6px;color:{CLR_MUTED};"
+        "font-size:0.95rem;'>Use the left rail to get started: set parameters "
+        "in <b>Settings</b>, press <b>Run Simulation</b>, and view the six "
+        "result figures under <b>Results</b>. Full methodology and references "
+        "are in <b>Documentation</b>.</div>", unsafe_allow_html=True)
+
+
 def _run_app():
     import streamlit as st
 
@@ -1600,17 +1753,19 @@ def _run_app():
     ss = st.session_state
     # Apply any pending navigation request BEFORE the radio widget is created.
     # (Streamlit forbids mutating a widget's own key after instantiation, so
-    # ---- navigation order: Settings, Run, Results, Documentation ----
+    # ---- navigation order: Home, Settings, Results, Documentation ----
+    NAV_HOME = "\U0001F3E0  Home"
     NAV_SETTINGS = "\u2699\ufe0f  Settings"
     NAV_RESULTS = "\U0001F4CA  Results"
     NAV_DOC = "\U0001F4D8  Documentation"
-    NAV_ORDER = [NAV_SETTINGS, NAV_RESULTS, NAV_DOC]
+    NAV_ORDER = [NAV_HOME, NAV_SETTINGS, NAV_RESULTS, NAV_DOC]
 
     # the run handler sets ss["pending_nav"] and we consume it here instead.)
     if ss.get("pending_nav"):
         ss["nav"] = ss.pop("pending_nav")
+    # First load lands on Home (the intro page); no page auto-jumps.
     if "nav" not in ss or ss["nav"] not in NAV_ORDER:
-        ss["nav"] = NAV_RESULTS if ss.get("has_run") else NAV_SETTINGS
+        ss["nav"] = NAV_HOME
     if "mode" not in ss:
         ss["mode"] = "Research"
 
@@ -1716,7 +1871,9 @@ def _run_app():
             st.exception(e); st.code(traceback.format_exc())
 
     # ---- page routing ----
-    if nav == NAV_DOC:
+    if nav == NAV_HOME:
+        _page_home()
+    elif nav == NAV_DOC:
         _page_documentation()
     elif nav == NAV_SETTINGS:
         _page_settings()
