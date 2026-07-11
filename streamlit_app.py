@@ -16,9 +16,11 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
 
   1. Personal flood experience
        base:       lambda_flood        (one factor per flood; Good, 1950)
-       multiplier: lambda_severity     active for agents who expect rising
-                   flood damage (perceived-severity appraisal; Rogers, 1975;
-                   Floyd, Prentice-Dunn & Rogers, 2000). = 1 otherwise.
+       multiplier: lambda_risk_expectation  active for agents who expect
+                   rising flood damage (risk-expectation appraisal, a
+                   forward-looking threat appraisal in the sense of
+                   Rogers, 1975; Floyd, Prentice-Dunn & Rogers, 2000).
+                   = 1 otherwise.
        Fires only in a flood year (flood_level > z). Availability heuristic:
        safe years produce no update (Tversky & Kahneman, 1974).
 
@@ -41,7 +43,7 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
 
 Survey-anchored defaults (NYC Flood Vulnerability Survey, cleaned):
   lambda_flood      1.52  (owner per-flood odds ratio)
-  lambda_severity   2.40  (expecting- vs not-expecting rising damage)
+  lambda_risk_expectation  2.40  (expecting- vs not-expecting rising damage)
   lambda_forecast   3.20  (forecast-preparation odds ratio)
   P(expects rising damage) 0.69 ; P(trusted info) 0.48 ; P(forecast prep) 0.65
   Cumulative "at most k" retrofit targets: 18.0 / 22.3 / 27.4 %
@@ -97,10 +99,10 @@ DEFAULTS = dict(
     # at baseline, so they cannot all be defaults at once without saturating.
     INITIAL_BELIEF=0.08,
     # Channel 1 - experience.  Survey anchors: LAMBDA_FLOOD 1.52 (owner per-flood
-    # odds ratio), LAMBDA_SEVERITY 2.40 (expecting vs not-expecting rising
+    # odds ratio), LAMBDA_RISK_EXPECTATION 2.40 (expecting vs not-expecting rising
     # damage).  Opened slightly de-escalated so the model is non-saturated out
     # of the box; tune upward toward the anchors and watch the cumulative bars.
-    LAMBDA_FLOOD=1.52, LAMBDA_SEVERITY=1.60,
+    LAMBDA_FLOOD=1.52, LAMBDA_RISK_EXPECTATION=1.60,
     P_EXPECT_RISING_DAMAGE=0.69,
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
@@ -386,15 +388,16 @@ class HouseholdAgent(mesa.Agent):
     def experience_flood(self, flood_level):
         """
         Fires only in a flood year (flood_level > z). Base per-flood factor
-        lambda_flood, times the perceived-severity multiplier lambda_severity
-        for agents who expect rising flood damage (= 1 otherwise).
+        lambda_flood, times the risk-expectation multiplier
+        lambda_risk_expectation for agents who expect rising flood damage
+        (= 1 otherwise).
         """
         if self.is_retrofitted:
             return False
         if flood_level > self.z:
             self.flood_count += 1
             m = self.model
-            mult = m.LAMBDA_SEVERITY if self.expects_rising_damage else 1.0
+            mult = m.LAMBDA_RISK_EXPECTATION if self.expects_rising_damage else 1.0
             self.belief = bayesian_update(self.belief, m.LAMBDA_FLOOD * mult)
             return True
         return False
@@ -753,7 +756,7 @@ def _collect_params():
         DBSCAN_MIN_SAMPLES=int(g("DBSCAN_MIN_SAMPLES", D["DBSCAN_MIN_SAMPLES"])),
         INITIAL_BELIEF=g("INITIAL_BELIEF", D["INITIAL_BELIEF"]),
         LAMBDA_FLOOD=g("LAMBDA_FLOOD", D["LAMBDA_FLOOD"]),
-        LAMBDA_SEVERITY=g("LAMBDA_SEVERITY", D["LAMBDA_SEVERITY"]),
+        LAMBDA_RISK_EXPECTATION=g("LAMBDA_RISK_EXPECTATION", D["LAMBDA_RISK_EXPECTATION"]),
         P_EXPECT_RISING_DAMAGE=g("P_EXPECT_RISING_DAMAGE", D["P_EXPECT_RISING_DAMAGE"]),
         LAMBDA_SOCIAL=g("LAMBDA_SOCIAL", D["LAMBDA_SOCIAL"]),
         LAMBDA_SIMILARITY=g("LAMBDA_SIMILARITY", D["LAMBDA_SIMILARITY"]),
@@ -864,11 +867,11 @@ def _page_settings():
     ch1, ch2, ch3 = st.columns(3)
     with ch1:
         _sec("Channel 1 \u00b7 Flood Experience",
-             "Belief update per flood, amplified by perceived severity.", C_CH1)
+             "Belief update per flood, amplified by expecting rising risk.", C_CH1)
         nb("\u03bb_flood  (base, per flood)", "LAMBDA_FLOOD", 0.01, "%.2f", 1.0, None,
            help="Bayes factor per flood. Survey anchor 1.52.")
-        nb("\u03bb_severity  (\u00d7 rising damage)", "LAMBDA_SEVERITY", 0.1, "%.2f", 1.0, None,
-           help="Perceived-severity multiplier on a flood, for agents expecting "
+        nb("\u03bb_risk_expectation  (\u00d7 rising damage)", "LAMBDA_RISK_EXPECTATION", 0.1, "%.2f", 1.0, None,
+           help="Risk-expectation multiplier on a flood, for agents expecting "
                 "rising flood damage. Survey anchor 2.40 [14].")
         nb("Fraction expecting rising damage", "P_EXPECT_RISING_DAMAGE",
            0.01, "%.2f", 0.0, 1.0, help="Assigned once at t=0. Survey: 0.69.")
@@ -1107,7 +1110,7 @@ def _config_chips(p):
         ("Agents", p["N_AGENTS"]), ("Steps", p["TIME_STEPS"]),
         ("P(H\u2081)", f"{p['INITIAL_BELIEF']:.2f}"),
         ("\u03b8", f"{p['PMT_THRESHOLD_MEAN']:.2f}"),
-        ("\u03bb_flood\u00d7\u03bb_sev", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_SEVERITY']:.2f}"),
+        ("\u03bb_flood\u00d7\u03bb_riskexp", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_RISK_EXPECTATION']:.2f}"),
         ("\u03bb_social\u00d7\u03bb_sim", f"{p['LAMBDA_SOCIAL']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
         ("\u03bb_info\u00d7\u03bb_fc", f"{p['LAMBDA_INFO']:.2f}\u00d7{p['LAMBDA_FORECAST']:.2f}"),
         ("Seed", p["RANDOM_SEED"]),
@@ -1255,7 +1258,7 @@ def _page_documentation():
                 "a trusted information source ($\\lambda_{info}=1.05$) who also "
                 "prepares on forecasts ($\\lambda_{forecast}=1.15$) then "
                 "experiences two floods, and expects rising damage "
-                "($\\lambda_{flood}=1.52$, $\\lambda_{severity}=1.60$). The "
+                "($\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,exp}}=1.60$). The "
                 "information channel fires once at $t=0$ and each flood fires "
                 "when it occurs:")
     st.latex(r"O_{\text{final}} = 0.087 \times "
@@ -1284,18 +1287,18 @@ def _page_documentation():
         "asymmetric \u2014 flood years are psychologically salient while dry years "
         "are cognitively inert (availability heuristic [15]). "
         "On a flood, the base per-flood factor $\\lambda_{flood}$ is "
-        "multiplied by a **perceived-severity** multiplier $\\lambda_{severity}$ "
+        "multiplied by a **risk-expectation** multiplier $\\lambda_{\\mathrm{risk\\,exp}}$ "
         "for households that expect flood damage to worsen [14], "
         "[4]:")
     st.latex(r"""\lambda_{\text{exp},i}^{(t)} =
 \begin{cases}
-\lambda_{flood}\cdot\lambda_{severity} & f_t > z_i \ \text{and agent expects rising damage}\\
+\lambda_{flood}\cdot\lambda_{\mathrm{risk\,exp}} & f_t > z_i \ \text{and agent expects rising damage}\\
 \lambda_{flood} & f_t > z_i \ \text{and agent does not}\\
 1 & f_t \le z_i \quad(\text{not flooded; no update})
 \end{cases}""")
     st.markdown("A single per-flood factor is used (no separate first-flood "
                 "term). Survey anchors: $\\lambda_{flood}=1.52$ (owner per-flood "
-                "odds ratio) and $\\lambda_{severity}=2.40$ (expecting- vs "
+                "odds ratio) and $\\lambda_{\\mathrm{risk\\,exp}}=2.40$ (expecting- vs "
                 "not-expecting rising damage). Because each flood contributes "
                 "only a modest factor, an agent must experience several floods "
                 "before belief nears the threshold \u2014 consistent with observed "
@@ -1389,7 +1392,7 @@ def _page_documentation():
         "A Bayes factor greater than 1 is evidence for retrofitting and "
         "multiplies the odds. Two floods contribute $\\lambda_{flood}^2$; a "
         "flood experienced by a household expecting rising damage contributes "
-        "$\\lambda_{flood}\\,\\lambda_{severity}$. Working in odds means these "
+        "$\\lambda_{flood}\\,\\lambda_{\\mathrm{risk\\,exp}}$. Working in odds means these "
         "combine by multiplication and the update is order-independent \u2014 the "
         "same evidence yields the same belief regardless of the order in which "
         "it arrives [5].")
@@ -1416,7 +1419,7 @@ def _page_documentation():
         "All parameters live on the **Settings** page, grouped into core "
         "decision drivers (belief, the three channels, the threshold) and "
         "structural environment settings. Survey-anchored starting values: "
-        "$\\lambda_{flood}=1.52$, $\\lambda_{severity}=2.40$, "
+        "$\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,exp}}=2.40$, "
         "$\\lambda_{forecast}\\approx3.2$; trait fractions 0.69 / 0.48 / 0.65. "
         "The opening defaults are deliberately de-escalated from these raw "
         "point estimates so the model is non-saturated out of the box: each "
@@ -1470,8 +1473,8 @@ def _page_documentation():
         "zero floods to 27% among the most-flooded), while never-flooded "
         "households retrofit at low rates \u2014 evidence against social contagion "
         "as the primary mechanism.\n"
-        "- **Perceived severity matters.** Households expecting rising flood "
-        "damage retrofit more, motivating the $\\lambda_{severity}$ multiplier "
+        "- **Risk expectation matters.** Households expecting rising flood "
+        "damage retrofit more, motivating the $\\lambda_{\\mathrm{risk\\,exp}}$ multiplier "
         "on the experience channel.\n"
         "- **Trusted information and forecast preparation raise adoption.** "
         "Households with a trusted information source (35% vs 21%) and those "
