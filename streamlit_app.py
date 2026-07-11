@@ -83,7 +83,7 @@ from sklearn.cluster import DBSCAN
 
 DEFAULTS = dict(
     # Simulation
-    TIME_STEPS=100, RANDOM_SEED=42,
+    TIME_STEPS=75, RANDOM_SEED=42,
     # Spatial / population
     N_AGENTS=200, GRID_ROWS=3, GRID_COLS=4, N_CONNECTORS=2,
     SLOPE=0.2, NOISE_FACTOR=0.05,
@@ -850,7 +850,7 @@ def _page_settings():
            help="Prior probability that a household should retrofit.")
     with bc2:
         nb("Threshold Mean  \u03b8", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 0.99,
-           help="Belief level at which a household acts (Rogers, 1975).")
+           help="Belief level at which a household acts [14].")
     with bc3:
         nb("\u03b8 Std Dev", "PMT_THRESHOLD_STD", 0.01, "%.2f", 0.0, 0.5,
            help="Spread of individual thresholds (if heterogeneity is on).")
@@ -869,14 +869,14 @@ def _page_settings():
            help="Bayes factor per flood. Survey anchor 1.52.")
         nb("\u03bb_severity  (\u00d7 rising damage)", "LAMBDA_SEVERITY", 0.1, "%.2f", 1.0, None,
            help="Perceived-severity multiplier on a flood, for agents expecting "
-                "rising flood damage. Survey anchor 2.40 (Rogers, 1975).")
+                "rising flood damage. Survey anchor 2.40 [14].")
         nb("Fraction expecting rising damage", "P_EXPECT_RISING_DAMAGE",
            0.01, "%.2f", 0.0, 1.0, help="Assigned once at t=0. Survey: 0.69.")
     with ch2:
         _sec("Channel 2 \u00b7 Proximity",
              "Social learning from retrofitted neighbours, stronger if similar.", C_CH2)
         nb("\u03bb_social  (base, per neighbor)", "LAMBDA_SOCIAL", 0.01, "%.2f", 1.0, None,
-           help="Bayes factor per newly-retrofitted connected neighbor (Granovetter, 1978).")
+           help="Bayes factor per newly-retrofitted connected neighbor [7].")
         nb("\u03bb_similarity  (\u00d7 if similar)", "LAMBDA_SIMILARITY", 0.1, "%.2f", 1.0, None,
            help="Applied when the retrofitted neighbor is similar "
                 "(Gower S \u2265 threshold). 1.0 = no similarity effect.")
@@ -968,7 +968,6 @@ def _fig_adoption_flood(model):
             color="#94a3b8", alpha=0.35, zorder=1)
     ax2.set_ylabel("Flood level", color="#64748b")
     ax2.tick_params(axis="y", labelcolor="#64748b")
-    ax.set_title("Adoption over time & annual flood levels", fontweight="bold")
     fig.tight_layout()
     return fig
 
@@ -997,7 +996,6 @@ def _fig_elevation_comparison(model):
     ax.set(xlabel="Elevation tercile", ylabel="Retrofit rate (%)",
            ylim=(0, max(rates) * 1.2 if rates else 100))
     ax.grid(alpha=0.3, axis="y")
-    ax.set_title("Retrofit adoption by elevation", fontweight="bold")
     fig.tight_layout()
     return fig
 
@@ -1019,7 +1017,6 @@ def _fig_comparison(model, cum, obs):
            ylim=(0, max(max(cum), max(obs)) * 1.25 + 1))
     ax.set_xticks(x); ax.set_xticklabels(["0", "\u2264 4", "5+ (all)"])
     ax.legend(); ax.grid(alpha=0.3, axis="y")
-    ax.set_title("Model vs observed (cumulative)", fontweight="bold")
     fig.tight_layout()
     return fig
 
@@ -1047,7 +1044,6 @@ def _fig_belief_evolution(model):
                label=f"Prior = {model.INITIAL_BELIEF:.2f}")
     ax.set(xlabel="Time step", ylabel="$P(H_1)$")
     ax.legend(fontsize=7); ax.grid(alpha=0.3)
-    ax.set_title("Bayesian belief evolution", fontweight="bold")
     fig.tight_layout()
     return fig
 
@@ -1060,20 +1056,25 @@ def _fig_network(model):
     na = [a for a in agents if not a.is_retrofitted]
     ad = [a for a in agents if a.is_retrofitted]
     if na:
-        ax.scatter([a.x for a in na], [a.y for a in na], c="#e2e8f0", s=120,
+        ax.scatter([a.x for a in na], [a.y for a in na], c="#e2e8f0", s=170,
                    edgecolor="black", linewidth=0.8, zorder=2)
     if ad:
         sc = ax.scatter([a.x for a in ad], [a.y for a in ad],
-                        c=[a.retrofit_step for a in ad], cmap="YlGn", s=130,
+                        c=[a.retrofit_step for a in ad], cmap="YlGn", s=185,
                         edgecolor="black", linewidth=0.8, zorder=3,
                         vmin=1, vmax=max(1, model.current_step))
         fig.colorbar(sc, ax=ax, shrink=0.7).set_label("Retrofit step")
+    # number inside each node = that household's personal flood count
+    for a in agents:
+        ax.text(a.x, a.y, str(a.flood_count), ha="center", va="center",
+                fontsize=6, fontweight="bold", zorder=4)
     ax.set(xlabel="x", ylabel="y", xlim=(-0.02, 1.02), ylim=(-0.02, 1.02))
     ax.set_aspect("equal"); ax.grid(alpha=0.3)
     ax.legend(handles=[Patch(facecolor="#e2e8f0", edgecolor="black", label="Not retrofitted"),
                        Patch(facecolor="#31a354", edgecolor="black", label="Retrofitted")],
               loc="upper right", fontsize=8)
-    ax.set_title("Social network (color = retrofit step)", fontweight="bold")
+    ax.text(0.0, -0.13, "Number in each node = household\u2019s personal flood count.",
+            transform=ax.transAxes, fontsize=7.5, style="italic", color="#64748b")
     fig.tight_layout()
     return fig
 
@@ -1096,7 +1097,6 @@ def _fig_spatial(model):
     ax.legend(handles=[Patch(facecolor="none", edgecolor=CLR_RETRO, label="Retrofitted"),
                        Patch(facecolor="#cbd5e1", edgecolor="black", label="Not retrofitted")],
               loc="upper right", fontsize=8)
-    ax.set_title("Spatial: elevation & retrofit status", fontweight="bold")
     fig.tight_layout()
     return fig
 
@@ -1224,7 +1224,7 @@ def _page_documentation():
     st.markdown(
         "Each agent maintains a belief $P_i(H_1)$, where $H_1$ = \u201cI should "
         "retrofit my house\u201d and $H_0$ = \u201cI should not.\u201d Every evidence event "
-        "is processed in three algebraic steps (Jaynes, 2003, Ch. 4; Kass & "
+        "is processed in three algebraic steps ([10]; Kass & "
         "Raftery, 1995).")
     st.markdown("**Step 1 \u2014 Convert probability to odds.** Odds give a natural "
                 "multiplicative framework for accumulating evidence:")
@@ -1234,14 +1234,14 @@ def _page_documentation():
                 "about eleven times more likely than $H_1$.")
     st.markdown("**Step 2 \u2014 Multiply the odds by a Bayes factor.** A Bayes "
                 "factor $\\lambda$ is the likelihood ratio of a single "
-                "observation (Kass & Raftery, 1995):")
+                "observation [11]:")
     st.latex(r"\lambda = \frac{P(\text{evidence}\mid H_1)}{P(\text{evidence}\mid H_0)}"
              r"\qquad O_i^{\text{post}} = O_i^{\text{prior}} \times \lambda")
     st.markdown("A factor $\\lambda>1$ shifts belief toward retrofitting; "
                 "$\\lambda=1$ is uninformative. When several channels fire in "
                 "the same step their factors compose multiplicatively, and "
                 "because multiplication is commutative the update is "
-                "order-independent (Good, 1950):")
+                "order-independent [5]:")
     st.latex(r"O_i^{\text{post}} = O_i^{\text{prior}}\times "
              r"\lambda_{\text{exp}}\times\lambda_{\text{prox}}\times\lambda_{\text{info}}")
     st.markdown("**Step 3 \u2014 Convert the posterior odds back to a probability:**")
@@ -1280,13 +1280,13 @@ def _page_documentation():
     st.markdown("#### 3.3 &nbsp; Channel 1: personal flood experience")
     st.markdown(
         "Each step a global flood level $f_t$ is drawn from a GEV distribution "
-        "(Coles, 2001). Agent $i$ is flooded when $f_t > z_i$. The update is "
+        "[2]. Agent $i$ is flooded when $f_t > z_i$. The update is "
         "asymmetric \u2014 flood years are psychologically salient while dry years "
-        "are cognitively inert (availability heuristic; Tversky & Kahneman, "
-        "1974). On a flood, the base per-flood factor $\\lambda_{flood}$ is "
+        "are cognitively inert (availability heuristic [15]). "
+        "On a flood, the base per-flood factor $\\lambda_{flood}$ is "
         "multiplied by a **perceived-severity** multiplier $\\lambda_{severity}$ "
-        "for households that expect flood damage to worsen (Rogers, 1975; "
-        "Floyd, Prentice-Dunn & Rogers, 2000):")
+        "for households that expect flood damage to worsen [14], "
+        "[4]:")
     st.latex(r"""\lambda_{\text{exp},i}^{(t)} =
 \begin{cases}
 \lambda_{flood}\cdot\lambda_{severity} & f_t > z_i \ \text{and agent expects rising damage}\\
@@ -1308,20 +1308,29 @@ def _page_documentation():
         "$\\mathcal{N}_i^{(t)}$ be the connected neighbours **newly observed** "
         "to have retrofitted at step $t$ (each counted once \u2014 one-shot "
         "learning). For each such neighbour the base factor $\\lambda_{social}$ "
-        "(Granovetter, 1978) is multiplied by a similarity multiplier "
+        "[7] is multiplied by a similarity multiplier "
         "$\\lambda_{similarity}$ when the neighbour is **similar**, i.e. their "
-        "Gower similarity meets the threshold (Gower, 1971; McPherson et al., "
-        "2001):")
+        "Gower similarity meets the threshold [6], [12]:")
     st.latex(r"""\lambda_{\text{prox},ij} =
 \begin{cases}
 \lambda_{social}\cdot\lambda_{similarity} & j\ \text{retrofitted and } S(i,j)\ge S^\ast\\
 \lambda_{social} & j\ \text{retrofitted and } S(i,j)< S^\ast\\
 1 & \text{no newly-retrofitted neighbour}
 \end{cases}""")
-    st.markdown("Similarity is the fraction of discrete attributes on which two "
+    st.markdown("This channel is grounded in empirical evidence that flood "
+                "adaptation spreads through social proximity: households are "
+                "more likely to adopt protective measures when neighbours and "
+                "friends have already done so [1], [13], and neighbourhood "
+                "proximity and social networks measurably shape property-level "
+                "adaptation in both surveys and agent-based models [9], [13]. "
+                "The similarity multiplier reflects homophily \u2014 the tendency for "
+                "influence to run more strongly between similar households [12] "
+                "\u2014 and parallels the neighbour effect documented for other "
+                "protective investments such as residential solar adoption [8]. "
+                "Similarity is the fraction of discrete attributes on which two "
                 "agents agree,")
     st.latex(r"S(i,j) = \frac{1}{A}\sum_{a=1}^{A}\mathbb{1}\!\left[x_{ia}=x_{ja}\right]"
-             r"\ \in[0,1]\quad(\text{Gower, 1971})")
+             r"\ \in[0,1]\quad(\text{[6]})")
     st.markdown("so a retrofitting neighbour who resembles the agent carries "
                 "more weight than a dissimilar one, and with no retrofitted "
                 "neighbour the channel is inert.")
@@ -1362,7 +1371,7 @@ def _page_documentation():
                 unsafe_allow_html=True)
     st.markdown(
         "A household retrofits at the first step its belief reaches its "
-        "threshold, $P_i(H_1)\\ge\\theta_i$ (Rogers, 1975). Thresholds are "
+        "threshold, $P_i(H_1)\\ge\\theta_i$ [14]. Thresholds are "
         "heterogeneous, drawn from a Normal distribution clipped to a user-set "
         "band $[\\theta_{low},\\theta_{high}]$; belief is homogeneous at $t=0$. "
         "Because only the gap between belief and threshold governs behaviour, a "
@@ -1383,7 +1392,7 @@ def _page_documentation():
         "$\\lambda_{flood}\\,\\lambda_{severity}$. Working in odds means these "
         "combine by multiplication and the update is order-independent \u2014 the "
         "same evidence yields the same belief regardless of the order in which "
-        "it arrives (Good, 1950).")
+        "it arrives [5].")
 
     # ---- 7 Key properties ----
     st.markdown('<div class="doc-h">7 &nbsp; Key properties</div>',
@@ -1515,19 +1524,58 @@ def _page_documentation():
     # ---- 15 References ----
     st.markdown('<div class="doc-h">15 &nbsp; References</div>', unsafe_allow_html=True)
     st.markdown(
-        "Coles (2001) *An Introduction to Statistical Modeling of Extreme "
-        "Values.* \u00b7 Ester, Kriegel, Sander & Xu (1996) *A density-based "
-        "algorithm for discovering clusters* (DBSCAN). \u00b7 Floyd, Prentice-Dunn "
-        "& Rogers (2000) *A meta-analysis of research on Protection Motivation "
-        "Theory.* \u00b7 Good (1950) *Probability and the Weighing of Evidence.* "
-        "\u00b7 Gower (1971) *A general coefficient of similarity and some of its "
-        "properties.* \u00b7 Granovetter (1978) *Threshold models of collective "
-        "behavior.* \u00b7 Jaynes (2003) *Probability Theory: The Logic of "
-        "Science.* \u00b7 Kass & Raftery (1995) *Bayes factors.* \u00b7 McPherson, "
-        "Smith-Lovin & Cook (2001) *Birds of a feather: homophily in social "
-        "networks.* \u00b7 Rogers (1975) *A protection motivation theory of fear "
-        "appeals and attitude change.* \u00b7 Tversky & Kahneman (1974) *Judgment "
-        "under uncertainty: heuristics and biases.*")
+        "References are numbered and cited as [X] throughout. Formatted in APA "
+        "style.\n\n"
+        "[1] Bubeck, P., Botzen, W. J. W., Kreibich, H., & Aerts, J. C. J. H. "
+        "(2013). Detailed insights into the influence of flood-coping appraisals "
+        "on mitigation behaviour. *Global Environmental Change, 23*(5), "
+        "1327\u20131338. https://doi.org/10.1016/j.gloenvcha.2013.05.009\n\n"
+        "[2] Coles, S. (2001). *An introduction to statistical modeling of "
+        "extreme values.* Springer.\n\n"
+        "[3] Ester, M., Kriegel, H.-P., Sander, J., & Xu, X. (1996). A "
+        "density-based algorithm for discovering clusters in large spatial "
+        "databases with noise. In *Proceedings of the Second International "
+        "Conference on Knowledge Discovery and Data Mining (KDD-96)* "
+        "(pp. 226\u2013231). AAAI Press.\n\n"
+        "[4] Floyd, D. L., Prentice-Dunn, S., & Rogers, R. W. (2000). A "
+        "meta-analysis of research on protection motivation theory. *Journal of "
+        "Applied Social Psychology, 30*(2), 407\u2013429. "
+        "https://doi.org/10.1111/j.1559-1816.2000.tb02323.x\n\n"
+        "[5] Good, I. J. (1950). *Probability and the weighing of evidence.* "
+        "Charles Griffin.\n\n"
+        "[6] Gower, J. C. (1971). A general coefficient of similarity and some "
+        "of its properties. *Biometrics, 27*(4), 857\u2013871. "
+        "https://doi.org/10.2307/2528823\n\n"
+        "[7] Granovetter, M. (1978). Threshold models of collective behavior. "
+        "*American Journal of Sociology, 83*(6), 1420\u20131443. "
+        "https://doi.org/10.1086/226707\n\n"
+        "[8] Graziano, M., & Gillingham, K. (2015). Spatial patterns of solar "
+        "photovoltaic system adoption: The influence of neighbors and the "
+        "built environment. *Journal of Economic Geography, 15*(4), 815\u2013839. "
+        "https://doi.org/10.1093/jeg/lbu036\n\n"
+        "[9] Haer, T., Botzen, W. J. W., & Aerts, J. C. J. H. (2016). The "
+        "effectiveness of flood risk communication strategies and the influence "
+        "of social networks\u2014Insights from an agent-based model. *Environmental "
+        "Science & Policy, 60*, 44\u201352. "
+        "https://doi.org/10.1016/j.envsci.2016.03.006\n\n"
+        "[10] Jaynes, E. T. (2003). *Probability theory: The logic of science.* "
+        "Cambridge University Press.\n\n"
+        "[11] Kass, R. E., & Raftery, A. E. (1995). Bayes factors. *Journal of "
+        "the American Statistical Association, 90*(430), 773\u2013795. "
+        "https://doi.org/10.1080/01621459.1995.10476572\n\n"
+        "[12] McPherson, M., Smith-Lovin, L., & Cook, J. M. (2001). Birds of a "
+        "feather: Homophily in social networks. *Annual Review of Sociology, "
+        "27*, 415\u2013444. https://doi.org/10.1146/annurev.soc.27.1.415\n\n"
+        "[13] Poussin, J. K., Botzen, W. J. W., & Aerts, J. C. J. H. (2014). "
+        "Factors of influence on flood damage mitigation behaviour by "
+        "households. *Environmental Science & Policy, 40*, 69\u201377. "
+        "https://doi.org/10.1016/j.envsci.2014.01.013\n\n"
+        "[14] Rogers, R. W. (1975). A protection motivation theory of fear "
+        "appeals and attitude change. *The Journal of Psychology, 91*(1), "
+        "93\u2013114. https://doi.org/10.1080/00223980.1975.9915803\n\n"
+        "[15] Tversky, A., & Kahneman, D. (1974). Judgment under uncertainty: "
+        "Heuristics and biases. *Science, 185*(4157), 1124\u20131131. "
+        "https://doi.org/10.1126/science.185.4157.1124")
 
 
 
