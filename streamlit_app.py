@@ -593,11 +593,12 @@ APP_PASSWORD = "NY2026VA"
 def _inject_css():
     import streamlit as st
     st.markdown(f"""<style>
-      .block-container {{ padding-top: 1.2rem; }}
-      h2 {{ font-size: 1.75rem !important; line-height: 1.35 !important;
-            padding-top: 0.15em !important; margin-top: 0 !important; }}
-      h3 {{ font-size: 1.4rem !important; line-height: 1.35 !important;
-            padding-top: 0.15em !important; }}
+      .block-container {{ padding-top: 2.6rem; }}
+      section.main > div {{ padding-top: 0.5rem; }}
+      h2 {{ font-size: 1.75rem !important; line-height: 1.4 !important;
+            padding-top: 0.35em !important; margin-top: 0.2rem !important; }}
+      h3 {{ font-size: 1.4rem !important; line-height: 1.4 !important;
+            padding-top: 0.2em !important; }}
       h2, h3 {{ overflow: visible !important; }}
       /* ---- dark navigation rail (sidebar) ---- */
       section[data-testid="stSidebar"] {{
@@ -628,40 +629,54 @@ def _inject_css():
           display:flex; align-items:center; gap:0; padding: 0.6rem 0.85rem; margin:0; width:100%;
           border-radius: 10px; cursor:pointer; background: transparent;
           transition: background-color .2s ease, transform .2s ease, box-shadow .2s ease; }}
-      /* Hide the native radio input AND its circular ring across Streamlit
-         builds. The ring is the label's first child div on older builds and
-         a div that wraps the <input> on newer ones; cover both without
-         touching the text container (which holds a stMarkdownContainer). */
-      section[data-testid="stSidebar"] [role="radiogroup"] input[type="radio"] {{ display:none !important; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child:not(:has([data-testid="stMarkdownContainer"])) {{
-          display:none !important; width:0 !important; margin:0 !important; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] > label [data-baseweb="radio"] > div:first-child {{
+      /* Hide the radio glyph/circle entirely. Across Streamlit builds the
+         glyph lives in the label's FIRST child (a baseweb radio wrapper or a
+         bare div); the text lives in a stMarkdownContainer. We hide the first
+         child whenever it is NOT the text container, and belt-and-suspenders
+         hide any baseweb radio and the raw input. */
+      section[data-testid="stSidebar"] [role="radiogroup"] input {{ display:none !important; }}
+      section[data-testid="stSidebar"] [role="radiogroup"] [data-baseweb="radio"] {{
           display:none !important; }}
+      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child {{
+          display:none !important; width:0 !important; height:0 !important;
+          margin:0 !important; padding:0 !important; }}
+      /* but always keep the text container visible even if it is first */
+      section[data-testid="stSidebar"] [role="radiogroup"] > label [data-testid="stMarkdownContainer"] {{
+          display:block !important; visibility:visible !important; opacity:1 !important; }}
       /* Force the label text visible and white. */
       section[data-testid="stSidebar"] [role="radiogroup"] > label,
       section[data-testid="stSidebar"] [role="radiogroup"] > label div,
       section[data-testid="stSidebar"] [role="radiogroup"] > label p,
       section[data-testid="stSidebar"] [role="radiogroup"] > label span {{
-          color:#fff !important; font-weight:600; font-size:0.95rem;
-          visibility:visible !important; opacity:1 !important; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] > label [data-testid="stMarkdownContainer"] {{
-          display:block !important; }}
+          color:#fff !important; font-weight:600; font-size:0.95rem; }}
       section[data-testid="stSidebar"] [role="radiogroup"] > label:hover {{
           background: rgba(148,163,184,0.16); transform: translateX(3px); }}
       section[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) {{
           background: linear-gradient(135deg, {CLR_SKY} 0%, {CLR_SKY_DK} 100%);
           box-shadow: 0 6px 16px rgba(14,165,233,0.40); transform: translateX(3px); }}
-      /* run button in the rail */
+      /* sidebar buttons: PRIMARY (selected mode / run) = blue,
+         SECONDARY (unselected mode) = muted dark slate. */
       section[data-testid="stSidebar"] .stButton > button {{
-          background: linear-gradient(135deg, {CLR_SKY} 0%, {CLR_SKY_DK} 100%);
           color:#fff !important; font-weight:700; border:0; border-radius:10px;
-          padding: 0.55rem 0.8rem; width:100%;
+          padding: 0.55rem 0.8rem; width:100%; }}
+      section[data-testid="stSidebar"] .stButton > button[kind="primary"],
+      section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {{
+          background: linear-gradient(135deg, {CLR_SKY} 0%, {CLR_SKY_DK} 100%);
           box-shadow: 0 6px 16px rgba(14,165,233,0.35); }}
-      section[data-testid="stSidebar"] .stButton > button:hover {{ filter: brightness(1.07); }}
+      section[data-testid="stSidebar"] .stButton > button[kind="secondary"],
+      section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-secondary"] {{
+          background: rgba(148,163,184,0.16) !important;
+          color:{CLR_SLATE300} !important; box-shadow:none; }}
+      section[data-testid="stSidebar"] .stButton > button:hover {{ filter: brightness(1.1); }}
       section[data-testid="stSidebar"] .rail-label {{ color:{CLR_SLATE300};
           font-size:0.72rem; font-weight:700; letter-spacing:0.6px;
           text-transform:uppercase; margin: 0.2rem 0 0.3rem 0.15rem; }}
       section[data-testid="stSidebar"] hr {{ border-color: rgba(148,163,184,0.20); margin: 0.7rem 0; }}
+      /* white labels for the case-study file uploaders */
+      section[data-testid="stSidebar"] [data-testid="stFileUploader"] label,
+      section[data-testid="stSidebar"] [data-testid="stFileUploader"] label p,
+      section[data-testid="stSidebar"] [data-testid="stFileUploader"] label span {{
+          color:#ffffff !important; font-weight:600 !important; }}
       /* progress bar under run */
       section[data-testid="stSidebar"] [data-testid="stProgress"] > div > div {{
           background: {CLR_SKY} !important; }}
@@ -827,20 +842,24 @@ def _page_settings():
     _sec("Belief & Decision Threshold",
          "Prior belief that a home should be retrofitted, and the PMT bar it must clear.",
          C_BELIEF)
-    b1, b2 = st.columns(2)
-    with b1:
-        nb("Initial Belief  \u2014  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
+    st.checkbox("Threshold Heterogeneity  (draw individual \u03b8 from a clipped Normal)",
+                value=D["ENABLE_THRESHOLD_HET"], key="p_ENABLE_THRESHOLD_HET")
+    bc1, bc2, bc3, bc4, bc5 = st.columns(5)
+    with bc1:
+        nb("Initial Belief  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
            help="Prior probability that a household should retrofit.")
-        nb("PMT Threshold Mean  (\u03b8)", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 0.99,
+    with bc2:
+        nb("Threshold Mean  \u03b8", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 0.99,
            help="Belief level at which a household acts (Rogers, 1975).")
-    with b2:
-        st.checkbox("Threshold Heterogeneity", value=D["ENABLE_THRESHOLD_HET"],
-                    key="p_ENABLE_THRESHOLD_HET",
-                    help="Draw individual thresholds from a clipped Normal.")
-        cc1, cc2, cc3 = st.columns(3)
-        with cc1: nb("Std Dev", "PMT_THRESHOLD_STD", 0.01, "%.2f", 0.0, 0.5)
-        with cc2: nb("Lower", "PMT_THRESHOLD_LOW", 0.01, "%.2f", 0.01, 0.99)
-        with cc3: nb("Upper", "PMT_THRESHOLD_HIGH", 0.01, "%.2f", 0.01, 0.99)
+    with bc3:
+        nb("\u03b8 Std Dev", "PMT_THRESHOLD_STD", 0.01, "%.2f", 0.0, 0.5,
+           help="Spread of individual thresholds (if heterogeneity is on).")
+    with bc4:
+        nb("\u03b8 Lower", "PMT_THRESHOLD_LOW", 0.01, "%.2f", 0.01, 0.99,
+           help="Lower clip bound for individual thresholds.")
+    with bc5:
+        nb("\u03b8 Upper", "PMT_THRESHOLD_HIGH", 0.01, "%.2f", 0.01, 0.99,
+           help="Upper clip bound for individual thresholds.")
 
     ch1, ch2, ch3 = st.columns(3)
     with ch1:
@@ -1231,6 +1250,25 @@ def _page_documentation():
                 "theorem; the advantage is that each evidence source is a single "
                 "scalar and sequential updates are just repeated multiplication.")
 
+    st.markdown("**Worked example.** Take a prior belief $P(H_1)=0.08$, so the "
+                "prior odds are $O = 0.08/0.92 = 0.087$. Suppose a household with "
+                "a trusted information source ($\\lambda_{info}=1.05$) who also "
+                "prepares on forecasts ($\\lambda_{forecast}=1.15$) then "
+                "experiences two floods, and expects rising damage "
+                "($\\lambda_{flood}=1.52$, $\\lambda_{severity}=1.60$). The "
+                "information channel fires once at $t=0$ and each flood fires "
+                "when it occurs:")
+    st.latex(r"O_{\text{final}} = 0.087 \times "
+             r"\underbrace{(1.05\times1.15)}_{\text{information}} \times "
+             r"\underbrace{(1.52\times1.60)}_{\text{flood 1}} \times "
+             r"\underbrace{(1.52\times1.60)}_{\text{flood 2}} = 0.62")
+    st.markdown("Converting back, $P_{\\text{final}}(H_1) = 0.62/(1+0.62) = "
+                "0.38$. Belief has risen from 0.08 to 0.38 \u2014 still below a "
+                "threshold of $\\theta=0.85$, so this household would not yet "
+                "retrofit. It illustrates why several strong signals are "
+                "typically needed to cross the bar, matching the low observed "
+                "adoption in the survey.")
+
     st.markdown("#### 3.2 &nbsp; Channel structure: base factor \u00d7 conditional multiplier")
     st.markdown(
         "Each of the three channels contributes a **base factor** times a "
@@ -1412,8 +1450,70 @@ def _page_documentation():
         "against survey data, and CSV export. A compact summary of the run\u2019s "
         "settings appears at the top of the page.")
 
-    # ---- 12 References ----
-    st.markdown('<div class="doc-h">12 &nbsp; References</div>', unsafe_allow_html=True)
+    # ---- 12 Empirical grounding ----
+    st.markdown('<div class="doc-h">12 &nbsp; Empirical grounding</div>',
+                unsafe_allow_html=True)
+    st.markdown(
+        "Every mechanism is anchored in the NYC Flood Vulnerability Index "
+        "Survey (Rockaway peninsula). Key findings that shape the model:\n"
+        "- **Flood experience is the dominant driver.** Retrofit rate rises "
+        "with the number of floods a household has experienced (roughly 18% at "
+        "zero floods to 27% among the most-flooded), while never-flooded "
+        "households retrofit at low rates \u2014 evidence against social contagion "
+        "as the primary mechanism.\n"
+        "- **Perceived severity matters.** Households expecting rising flood "
+        "damage retrofit more, motivating the $\\lambda_{severity}$ multiplier "
+        "on the experience channel.\n"
+        "- **Trusted information and forecast preparation raise adoption.** "
+        "Households with a trusted information source (35% vs 21%) and those "
+        "preparing on forecasts (31% vs 17%) retrofit more, motivating the "
+        "information channel; institutional/government sources show the "
+        "strongest association.\n"
+        "- **No income gradient.** Flood exposure and damage do not vary with "
+        "household income, so income is deliberately excluded.\n"
+        "- **Ownership gates action.** Almost all retrofitters are owners; "
+        "renters act rarely and only after long delays.")
+
+    # ---- 13 Assumptions & limitations ----
+    st.markdown('<div class="doc-h">13 &nbsp; Assumptions & limitations</div>',
+                unsafe_allow_html=True)
+    st.markdown(
+        "- **Homogeneous prior belief.** All households begin with the same "
+        "$P(H_1)$; only the threshold is heterogeneous. This is a modelling "
+        "choice for identifiability, not an empirical claim.\n"
+        "- **Static traits.** Expects-rising-damage, trusted-information, and "
+        "forecast-preparation are fixed at $t=0$; the model does not let "
+        "information spread or beliefs about severity evolve endogenously.\n"
+        "- **One-shot information channel.** Trusted information applies once, "
+        "as a prior, rather than as repeated exposure.\n"
+        "- **Absorbing retrofit.** Households never de-adapt or move.\n"
+        "- **Cross-sectional calibration.** Survey odds ratios are associations "
+        "from a single snapshot; the model uses them as anchors, not as "
+        "identified causal effects, and per-channel factors are not separately "
+        "identified from the survey alone.\n"
+        "- **Synthetic geography in Research Mode.** Positions and elevations "
+        "are generated on a grid; Case Study Mode replaces them with real "
+        "uploaded coordinates and an observed flood series.")
+
+    # ---- 14 Research vs Case Study mode ----
+    st.markdown('<div class="doc-h">14 &nbsp; Research mode vs case-study mode</div>',
+                unsafe_allow_html=True)
+    st.markdown(
+        "**Research mode** generates a synthetic settlement: household "
+        "positions on a connected grid, elevations from a linear coastal "
+        "gradient with noise, and annual floods sampled from a GEV distribution "
+        "fitted to the return periods and levels on the Settings page. Use it "
+        "for controlled experiments and sensitivity analysis.\n\n"
+        "**Case-study mode** replaces the synthetic setting with real data: "
+        "upload a **location CSV** (columns `x, y, z` \u2014 one row per household, "
+        "giving position and elevation) and a **flood-series CSV** (column "
+        "`flood_level` \u2014 one value per time step, replayed in order). The agent "
+        "count is taken from the location file; every behavioural parameter "
+        "still comes from the Settings page, so the same calibrated mechanism "
+        "can be driven by an observed landscape and flood history.")
+
+    # ---- 15 References ----
+    st.markdown('<div class="doc-h">15 &nbsp; References</div>', unsafe_allow_html=True)
     st.markdown(
         "Coles (2001) *An Introduction to Statistical Modeling of Extreme "
         "Values.* \u00b7 Ester, Kriegel, Sander & Xu (1996) *A density-based "
@@ -1465,22 +1565,19 @@ def _run_app():
 
     # ---- navigation rail ----
     with st.sidebar:
-        # Logo at the very top of the rail (as in the ADAPT tool). Falls back
-        # to a text brand block if logo.png is not present in the app folder.
+        # Logo at the very top of the rail (as in the ADAPT tool). No text
+        # brand beneath it. Falls back to a small emoji only if logo.png is
+        # missing.
         import os as _os
         if _os.path.exists("logo.png"):
             try:
                 st.image("logo.png", width="stretch")
             except TypeError:
                 st.image("logo.png", use_container_width=True)
-            st.markdown('<div class="rail-brand" style="border-top:0;padding-top:0;">'
-                        '<span class="rail-sub">Flood Mitigation Agent-based Model'
-                        '</span></div>', unsafe_allow_html=True)
+            st.markdown('<div style="height:0.5rem;"></div>', unsafe_allow_html=True)
         else:
             st.markdown('<div class="rail-brand"><span class="rail-word">'
-                        '\U0001F30A Flood Mitigation ABM</span><span class="rail-sub">'
-                        'Flood Mitigation Agent-based Model</span></div>',
-                        unsafe_allow_html=True)
+                        '\U0001F30A</span></div>', unsafe_allow_html=True)
 
         # ---- Mode selection (two buttons in one row; default Research) ----
         st.markdown('<div class="rail-label">Mode</div>', unsafe_allow_html=True)
@@ -1499,7 +1596,7 @@ def _run_app():
                         unsafe_allow_html=True)
             uploaded_csv = st.file_uploader("Location CSV (x, y, z)", type=["csv"],
                                             key="csv_upl")
-            uploaded_flood = st.file_uploader("Flood series CSV (optional)",
+            uploaded_flood = st.file_uploader("Flood series CSV",
                                               type=["csv"], key="flood_upl",
                                               help="Column 'flood_level', one value per step.")
 
@@ -1534,13 +1631,16 @@ def _run_app():
                 params["CUSTOM_POSITIONS"] = cdf[["x", "y"]].to_numpy(float)
                 params["CUSTOM_ELEVATIONS"] = cdf["z"].to_numpy(float)
                 params["N_AGENTS"] = len(cdf)
-                if uploaded_flood is not None:
-                    uploaded_flood.seek(0)
-                    fdf = pd.read_csv(uploaded_flood)
-                    if "flood_level" not in fdf.columns:
-                        st.error("Flood series CSV needs a 'flood_level' column.")
-                        st.stop()
-                    params["CUSTOM_FLOOD_SERIES"] = fdf["flood_level"].to_numpy(float)
+                if uploaded_flood is None:
+                    st.warning("Upload a flood series CSV (column 'flood_level') "
+                               "to run Case Study Mode.")
+                    st.stop()
+                uploaded_flood.seek(0)
+                fdf = pd.read_csv(uploaded_flood)
+                if "flood_level" not in fdf.columns:
+                    st.error("Flood series CSV needs a 'flood_level' column.")
+                    st.stop()
+                params["CUSTOM_FLOOD_SERIES"] = fdf["flood_level"].to_numpy(float)
 
             model = _run_with_progress(params, progress_slot)
             ss["model_obj"] = model
