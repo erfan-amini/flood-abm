@@ -1593,20 +1593,21 @@ def _page_documentation():
 # ---------------------------------------------------------------------------
 
 def _workflow_svg():
-    """Professional SVG flowchart of the model workflow (ADAPT palette).
+    """Vertical SVG flowchart of the model workflow (ADAPT palette).
 
-    Layout (960x680):
-      setup -> assign traits/prior  (top, centered)
-      flood draw (center) feeds Channel 1 & Channel 2; Channel 3 fires once
-      at t=0 from the prior. All three channels converge on 'update belief'.
-      belief -> decision diamond -> yes: retrofit ; no: routed loop back to
-      the flood draw. Every arrow terminates on a real node edge.
+    Portrait layout (600x860) for the right column of the Home page:
+      Initialization -> Assign attributes & prior belief.
+      Channel 3 (Information, t=0) sits OUTSIDE the loop, to the right, and
+      adjusts the prior once. The 'each time step' loop then contains the
+      flood draw, Channel 1 and Channel 2, the belief update, and the PMT
+      decision; 'no' loops back to the flood draw, 'yes' leads to retrofit.
+      Every arrow terminates on a real node edge.
     """
     C1, C2, C3 = "#0ea5e9", "#22c55e", "#f97316"   # ch1 sky, ch2 green, ch3 orange
     SKY, INK, MUT = "#0ea5e9", "#0f172a", "#64748b"
     GRN = "#22c55e"
 
-    def box(x, y, w, h, fill, stroke, title, sub="", tcol="#ffffff", rx=12, fs=14.5):
+    def box(x, y, w, h, fill, stroke, title, sub="", tcol="#ffffff", rx=11, fs=14):
         cx = x + w / 2
         s = (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{rx}" '
              f'fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
@@ -1616,7 +1617,7 @@ def _workflow_svg():
               f'fill="{tcol}">{title}</text>')
         if sub:
             s += (f'<text x="{cx}" y="{y+h/2+11}" text-anchor="middle" '
-                  f'dominant-baseline="middle" font-size="11" '
+                  f'dominant-baseline="middle" font-size="10.5" '
                   f'fill="{tcol}" opacity="0.92">{sub}</text>')
         return s
 
@@ -1625,19 +1626,19 @@ def _workflow_svg():
         return (f'<line x1="{x}" y1="{y1}" x2="{x}" y2="{y2}" stroke="{color}" '
                 f'stroke-width="2" marker-end="url(#ah)" {d}/>')
 
-    def path(pts, color=MUT, dash=""):
+    def path(pts, color=MUT, dash="", marker="ah"):
         d = f'stroke-dasharray="{dash}"' if dash else ""
         pd = "M " + " L ".join(f"{px},{py}" for px, py in pts)
         return (f'<path d="{pd}" fill="none" stroke="{color}" stroke-width="2" '
-                f'marker-end="url(#ah)" {d}/>')
+                f'marker-end="url(#{marker})" {d}/>')
 
-    def lbl(x, y, text, color=MUT, weight="700", size=11):
-        return (f'<text x="{x}" y="{y}" text-anchor="middle" font-size="{size}" '
+    def lbl(x, y, text, color=MUT, weight="700", size=10.5, anchor="middle"):
+        return (f'<text x="{x}" y="{y}" text-anchor="{anchor}" font-size="{size}" '
                 f'font-weight="{weight}" fill="{color}">{text}</text>')
 
-    # column centers
-    L, Cx, R = 200, 480, 760      # channel 3 / flood-ch1 / channel 2 columns
-    svg = f'''<svg viewBox="0 0 960 680" xmlns="http://www.w3.org/2000/svg"
+    # main vertical spine at x=210; Channel 3 column at x=430
+    SX = 210            # spine center x
+    svg = f'''<svg viewBox="0 0 580 700" xmlns="http://www.w3.org/2000/svg"
       font-family="'Source Sans Pro',system-ui,sans-serif">
       <defs>
         <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3"
@@ -1648,127 +1649,138 @@ def _workflow_svg():
                 orient="auto" markerUnits="strokeWidth">
           <path d="M0,0 L7,3 L0,6 Z" fill="{GRN}"/>
         </marker>
+        <marker id="aho" markerWidth="9" markerHeight="9" refX="7" refY="3"
+                orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L7,3 L0,6 Z" fill="{C3}"/>
+        </marker>
         <linearGradient id="gInk" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="{INK}"/><stop offset="1" stop-color="#1e293b"/>
         </linearGradient>
       </defs>
 
-      <!-- 1. setup -->
-      {box(370, 20, 220, 52, "url(#gInk)", INK, "Initialise settlement",
+      <!-- 1. initialization -->
+      {box(SX-120, 16, 240, 50, "url(#gInk)", INK, "Initialization",
            "households, elevation, network")}
-      {vline(480, 72, 100)}
+      {vline(SX, 66, 94)}
 
-      <!-- 2. assign traits + prior belief -->
-      {box(330, 102, 300, 52, "#f1f5f9", "#cbd5e1",
-           "Assign traits &amp; prior belief",
+      <!-- 2. assign attributes + prior belief -->
+      {box(SX-140, 96, 280, 54, "#f1f5f9", "#cbd5e1",
+           "Assign attributes &amp; prior belief",
            "risk perception, trusted info, forecast info", INK)}
 
-      <!-- from prior: split to Channel 3 (once) and into the step loop -->
-      <!-- down the middle into the loop -->
-      {path([(480,154),(480,214)])}
+      <!-- Channel 3 OUTSIDE the loop, on the right, one-time t=0 -->
+      {box(360, 96, 200, 66, C3, "#c2610c", "Channel 3 \u00b7 Information",
+           "\u03bb_info \u00d7 \u03bb_forecast", fs=13)}
+      <!-- prior belief <-> channel 3 : ch3 adjusts prior once -->
+      {path([(360,129),(SX+140,123)], C3, marker="aho")}
+      {lbl(350, 88, "once, at t=0", C3, size=9.5, anchor="end")}
 
-      <!-- STEP LOOP box -->
-      <rect x="60" y="224" width="840" height="300" rx="16" fill="none"
+      {vline(SX, 150, 196)}
+
+      <!-- ===== EACH TIME STEP loop box ===== -->
+      <rect x="40" y="206" width="404" height="392" rx="16" fill="none"
             stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6 5"/>
-      <text x="78" y="246" font-size="12" font-weight="800" fill="{MUT}"
+      <text x="56" y="228" font-size="11.5" font-weight="800" fill="{MUT}"
             letter-spacing="0.5">EACH TIME STEP (YEAR)</text>
 
-      <!-- flood draw (center top of loop) -->
-      {box(370, 250, 220, 48, "#e0f2fe", SKY, "Draw annual flood",
-           "GEV sample f\u209c", INK)}
+      <!-- flood draw -->
+      {box(SX-110, 240, 220, 46, "#e0f2fe", SKY, "Draw annual flood",
+           "GEV sample f\u209c", INK, fs=13)}
 
-      <!-- three channels, SAME LEVEL -->
-      {box(70, 340, 250, 66, C3, "#c2610c", "Channel 3 \u00b7 Information",
-           "\u03bb_info \u00d7 \u03bb_forecast (t=0 only)")}
-      {box(355, 340, 250, 66, C1, "#0369a1", "Channel 1 \u00b7 Flood experience",
-           "if flooded: \u03bb_flood \u00d7 \u03bb_risk_perc")}
-      {box(640, 340, 250, 66, C2, "#15803d", "Channel 2 \u00b7 Proximity",
-           "per retrofit neighbour: \u03bb_social \u00d7 \u03bb_sim")}
+      <!-- Channel 1 & Channel 2 side by side -->
+      {vline(SX, 286, 322)}
+      {box(60, 324, 170, 68, C1, "#0369a1", "Channel 1",
+           "Flood experience", fs=13)}
+      {box(250, 324, 170, 68, C2, "#15803d", "Channel 2",
+           "Proximity", fs=13)}
+      <!-- flood feeds both channels -->
+      {path([(SX,308),(145,308),(145,324)])}
+      {path([(SX,308),(335,308),(335,324)])}
 
-      <!-- prior belief feeds Channel 3 once (dashed, labelled t=0) -->
-      {path([(330,128),(195,128),(195,340)], C3, dash="5 4")}
-      {lbl(230, 122, "once, t=0", C3, size=10)}
+      <!-- sub-labels for the two channels -->
+      {lbl(145, 384, "\u03bb_flood \u00d7 \u03bb_risk_perc", "#e6f5ff", weight="600", size=9)}
+      {lbl(335, 384, "\u03bb_social \u00d7 \u03bb_sim", "#e7fbef", weight="600", size=9)}
 
-      <!-- flood draw feeds Channel 1 (straight) and Channel 2 (routed) -->
-      {vline(480, 298, 340)}
-      {path([(590,274),(765,274),(765,340)])}
-
-      <!-- three channels converge on 'update belief' -->
-      {path([(195,406),(195,450),(410,450),(410,468)], C3)}
-      {vline(480, 406, 468, C1)}
-      {path([(765,406),(765,450),(550,450),(550,468)], C2)}
+      <!-- both channels converge on update belief -->
+      {path([(145,392),(145,424),(SX-40,424),(SX-40,442)], C1)}
+      {path([(335,392),(335,424),(SX+40,424),(SX+40,442)], C2)}
 
       <!-- update belief -->
-      {box(370, 470, 220, 44, "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)",
-           "odds \u00d7 Bayes factors", INK, fs=13.5)}
+      {box(SX-110, 444, 220, 46, "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)",
+           "odds \u00d7 Bayes factors", INK, fs=13)}
+      {vline(SX, 490, 520)}
 
-      <!-- decision diamond (below the loop) -->
-      {vline(480, 514, 548)}
-      <polygon points="480,548 596,582 480,616 364,582" fill="#fff7ed"
+      <!-- decision diamond (inside loop) -->
+      <polygon points="{SX},520 {SX+108},556 {SX},592 {SX-108},556" fill="#fff7ed"
                stroke="{C3}" stroke-width="1.5"/>
-      {lbl(480, 578, "P(H\u2081) \u2265 \u03b8 ?", INK, size=13)}
-      {lbl(480, 596, "PMT threshold", MUT, weight="500", size=10.5)}
+      {lbl(SX, 552, "P(H\u2081) \u2265 \u03b8 ?", INK, size=12)}
+      {lbl(SX, 570, "PMT threshold", MUT, weight="500", size=9.5)}
 
-      <!-- yes -> retrofit -->
-      <line x1="596" y1="582" x2="700" y2="582" stroke="{GRN}"
-            stroke-width="2" marker-end="url(#ahg)"/>
-      {lbl(648, 574, "yes", GRN, size=11)}
-      {box(700, 556, 180, 52, "#dcfce7", GRN, "Retrofit (absorbing)",
-           "leaves risk pool", INK)}
+      <!-- NO: loop back up to flood draw (routed on far left) -->
+      {path([(SX-108,556),(20,556),(20,263),(SX-110,263)])}
+      {lbl(96, 548, "no", MUT, size=10.5)}
+      <text x="20" y="410" text-anchor="middle" font-size="9.5"
+            fill="{MUT}" font-style="italic"
+            transform="rotate(-90 20 410)">carry belief to next year</text>
 
-      <!-- no -> loop back to flood draw (routed cleanly around the left) -->
-      {path([(364,582),(30,582),(30,274),(370,274)])}
-      {lbl(300, 574, "no", MUT, size=11)}
-      <text x="30" y="430" text-anchor="middle" font-size="10.5"
-            fill="{MUT}" font-style="italic" transform="rotate(-90 30 430)">carry belief to next year</text>
+      <!-- YES: down to retrofit (below the loop) -->
+      {path([(SX,592),(SX,632)], GRN, marker="ahg")}
+      {lbl(SX+22, 618, "yes", GRN, size=10.5, anchor="start")}
+      {box(SX-120, 634, 240, 50, "#dcfce7", GRN, "Retrofit (absorbing)",
+           "leaves the risk pool permanently", INK)}
     </svg>'''
     return svg
 
 
 def _page_home():
     import streamlit as st
-    st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
-    st.markdown(
-        f"<div style='font-size:2.1rem;font-weight:800;color:{CLR_INK};"
-        "line-height:1.2;margin-bottom:0.2rem;'>Flood Mitigation "
-        "Agent-based Model</div>"
-        f"<div style='font-size:1.05rem;color:{CLR_MUTED};margin-bottom:1.1rem;'>"
-        "A household decision model of flood-retrofit adoption, grounded in "
-        "Bayesian belief updating and Protection Motivation Theory.</div>",
-        unsafe_allow_html=True)
-
-    st.markdown(
-        "This tool simulates how households along a flood-exposed coastline "
-        "decide whether to retrofit their homes. Each household holds a belief "
-        "that it should retrofit and updates that belief as evidence arrives "
-        "through three channels \u2014 **personal flood experience**, **social "
-        "influence from retrofitted neighbours**, and **trusted information** "
-        "\u2014 acting once its belief crosses a personal decision threshold. The "
-        "model is calibrated to the NYC Flood Vulnerability Index Survey and is "
-        "designed for both controlled experiments (Research mode) and "
-        "real-data scenarios (Case Study mode).")
-
-    st.markdown(f"<div style='font-size:1.25rem;font-weight:800;color:{CLR_INK};"
-                f"border-bottom:2px solid {CLR_SKY};padding-bottom:0.3rem;"
-                "margin:1.4rem 0 1rem 0;'>How the model works</div>",
-                unsafe_allow_html=True)
-    # Embed the SVG as a base64 data-URI <img>; Streamlit's markdown sanitiser
-    # strips raw inline <svg>, but allows an <img> with a data URI.
     import base64
-    svg = _workflow_svg()
-    b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
-    st.markdown(
-        f"<img src='data:image/svg+xml;base64,{b64}' "
-        "style='width:100%;max-width:960px;height:auto;display:block;"
-        "margin:0 auto;'/>", unsafe_allow_html=True)
 
-    st.markdown(
-        f"<div style='margin-top:1.2rem;padding:0.8rem 1rem;background:#f8fafc;"
-        f"border-left:3px solid {CLR_SKY};border-radius:6px;color:{CLR_MUTED};"
-        "font-size:0.95rem;'>Use the left rail to get started: set parameters "
-        "in <b>Settings</b>, press <b>Run Simulation</b>, and view the six "
-        "result figures under <b>Results</b>. Full methodology and references "
-        "are in <b>Documentation</b>.</div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:0.3rem;'></div>", unsafe_allow_html=True)
+    left, right = st.columns([1, 1], gap="large")
+
+    with left:
+        st.markdown(
+            f"<div style='font-size:2.0rem;font-weight:800;color:{CLR_INK};"
+            "line-height:1.2;margin-bottom:0.2rem;'>Flood Mitigation "
+            "Agent-based Model</div>"
+            f"<div style='font-size:1.02rem;color:{CLR_MUTED};margin-bottom:1.0rem;'>"
+            "A household decision model of flood-retrofit adoption, grounded in "
+            "Bayesian belief updating and Protection Motivation Theory.</div>",
+            unsafe_allow_html=True)
+
+        st.markdown(
+            "This tool simulates how households along a flood-exposed coastline "
+            "decide whether to retrofit their homes. Each household holds a "
+            "belief that it should retrofit and updates that belief as evidence "
+            "arrives through three channels \u2014 **personal flood experience**, "
+            "**social influence from retrofitted neighbours**, and **trusted "
+            "information** \u2014 acting once its belief crosses a personal decision "
+            "threshold.")
+        st.markdown(
+            "The model is calibrated to the NYC Flood Vulnerability Index Survey "
+            "and supports both controlled experiments (**Research mode**) and "
+            "real-data scenarios (**Case Study mode**), where you upload your "
+            "own household locations and flood series.")
+
+        st.markdown(
+            f"<div style='margin-top:0.6rem;padding:0.8rem 1rem;background:#f8fafc;"
+            f"border-left:3px solid {CLR_SKY};border-radius:6px;color:{CLR_MUTED};"
+            "font-size:0.95rem;'>Use the left rail to get started: set "
+            "parameters in <b>Settings</b>, press <b>Run Simulation</b>, and "
+            "view the six result figures under <b>Results</b>. Full methodology "
+            "and references are in <b>Documentation</b>.</div>",
+            unsafe_allow_html=True)
+
+    with right:
+        # Embed the SVG as a base64 data-URI <img>; Streamlit's markdown
+        # sanitiser strips raw inline <svg>, but allows an <img> data URI.
+        svg = _workflow_svg()
+        b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+        st.markdown(
+            f"<img src='data:image/svg+xml;base64,{b64}' "
+            "style='width:100%;max-width:560px;height:auto;display:block;"
+            "margin:0 auto;'/>", unsafe_allow_html=True)
 
 
 def _run_app():
