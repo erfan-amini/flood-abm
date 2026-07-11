@@ -596,13 +596,14 @@ def _inject_css():
           display:flex; align-items:center; gap:0; padding: 0.6rem 0.85rem; margin:0; width:100%;
           border-radius: 10px; cursor:pointer; background: transparent;
           transition: background-color .2s ease, transform .2s ease, box-shadow .2s ease; }}
-      /* Hide ONLY the native radio input and its circular ring wrapper.
-         The ring is a div that directly contains the <input>; we target it
-         via :has() and also hide the input itself. We deliberately do NOT
-         hide div:first-of-type, because on this Streamlit build the first
-         div holds the LABEL TEXT. */
+      /* Hide the native radio input AND its circular ring across Streamlit
+         builds. The ring is the label's first child div on older builds and
+         a div that wraps the <input> on newer ones; cover both without
+         touching the text container (which holds a stMarkdownContainer). */
       section[data-testid="stSidebar"] [role="radiogroup"] input[type="radio"] {{ display:none !important; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:has(> input[type="radio"]) {{
+      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child:not(:has([data-testid="stMarkdownContainer"])) {{
+          display:none !important; width:0 !important; margin:0 !important; }}
+      section[data-testid="stSidebar"] [role="radiogroup"] > label [data-baseweb="radio"] > div:first-child {{
           display:none !important; }}
       /* Force the label text visible and white. */
       section[data-testid="stSidebar"] [role="radiogroup"] > label,
@@ -891,6 +892,164 @@ def _page_settings():
             ni("Random Seed", "RANDOM_SEED", 0, 10_000_000, 1)
 
 
+def _draw_edges(ax, model, alpha=0.25):
+    segs = []
+    for u, v in model.G.edges():
+        au, av = model.agents_by_node[u], model.agents_by_node[v]
+        segs.append([(au.x, au.y), (av.x, av.y)])
+    if segs:
+        ax.add_collection(LineCollection(segs, linewidths=0.5, colors="gray",
+                                         alpha=alpha, zorder=1))
+
+
+def _fig_adoption_flood(model):
+    """Adoption curve with the annual flood series on a twin axis."""
+    df = model.get_model_dataframe()
+    fig, ax = plt.subplots(figsize=(7, 4.4))
+    ax.plot(df.index, df["pct_retrofitted"], color=CLR_SKY_DK, lw=2.2,
+            label="Retrofitted (%)", zorder=3)
+    ax.fill_between(df.index, df["pct_retrofitted"], color=CLR_SKY, alpha=0.15, zorder=2)
+    ax.set(xlabel="Time step", ylabel="Retrofitted (%)",
+           xlim=(1, model.time_steps), ylim=(0, 100))
+    ax.grid(alpha=0.3)
+    ax2 = ax.twinx()
+    ax2.bar(range(1, len(model.flood_history) + 1), model.flood_history,
+            color="#94a3b8", alpha=0.35, zorder=1)
+    ax2.set_ylabel("Flood level", color="#64748b")
+    ax2.tick_params(axis="y", labelcolor="#64748b")
+    ax.set_title("Adoption over time & annual flood levels", fontweight="bold")
+    fig.tight_layout()
+    return fig
+
+
+def _fig_elevation_comparison(model):
+    """Retrofit rate by elevation tercile."""
+    agents = list(model.agents)
+    zs = np.array([a.z for a in agents])
+    t1, t2 = np.percentile(zs, [33.33, 66.67])
+    groups = {"Low": [], "Medium": [], "High": []}
+    for a in agents:
+        if a.z <= t1: groups["Low"].append(a)
+        elif a.z <= t2: groups["Medium"].append(a)
+        else: groups["High"].append(a)
+    labels, rates = [], []
+    for lab, g in groups.items():
+        if g:
+            rates.append(100 * sum(1 for a in g if a.is_retrofitted) / len(g))
+            labels.append(f"{lab}\n(n={len(g)})")
+    fig, ax = plt.subplots(figsize=(7, 4.4))
+    bars = ax.bar(labels, rates, color=["#ef4444", "#f97316", "#22c55e"],
+                  edgecolor="black")
+    for bar, r in zip(bars, rates):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
+                f"{r:.1f}%", ha="center", va="bottom", fontweight="bold")
+    ax.set(xlabel="Elevation tercile", ylabel="Retrofit rate (%)",
+           ylim=(0, max(rates) * 1.2 if rates else 100))
+    ax.grid(alpha=0.3, axis="y")
+    ax.set_title("Retrofit adoption by elevation", fontweight="bold")
+    fig.tight_layout()
+    return fig
+
+
+def _fig_comparison(model, cum, obs):
+    """Model vs observed cumulative retrofit rate."""
+    fig, ax = plt.subplots(figsize=(7, 4.4))
+    x = np.arange(3); w = 0.38
+    bm = ax.bar(x - w / 2, cum, w, label="Model", color=CLR_MODEL, edgecolor="black")
+    bo = ax.bar(x + w / 2, obs, w, label="Observed", color=CLR_OBS, edgecolor="black")
+    for bars in (bm, bo):
+        for bar in bars:
+            h = bar.get_height()
+            if h > 0:
+                ax.text(bar.get_x() + bar.get_width() / 2, h + 1, f"{h:.0f}",
+                        ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax.set(xlabel="Flood experience (cumulative, at most k)",
+           ylabel="Retrofit rate (%)",
+           ylim=(0, max(max(cum), max(obs)) * 1.25 + 1))
+    ax.set_xticks(x); ax.set_xticklabels(["0", "\u2264 4", "5+ (all)"])
+    ax.legend(); ax.grid(alpha=0.3, axis="y")
+    ax.set_title("Model vs observed (cumulative)", fontweight="bold")
+    fig.tight_layout()
+    return fig
+
+
+def _fig_belief_evolution(model):
+    """Mean belief with 10-90 band, threshold band, and prior line."""
+    dfm = model.get_model_dataframe()
+    dfa = model.get_agent_dataframe()
+    steps = dfm.index.values
+    p10, p90 = [], []
+    for s in steps:
+        b = dfa.xs(s, level="Step")["belief"].values
+        p10.append(np.percentile(b, 10)); p90.append(np.percentile(b, 90))
+    fig, ax = plt.subplots(figsize=(7, 4.4))
+    ax.fill_between(steps, p10, p90, alpha=0.2, color=CLR_SKY,
+                    label="10th\u201390th percentile")
+    ax.plot(steps, dfm["mean_belief"], color=CLR_SKY_DK, lw=2, label="Mean $P(H_1)$")
+    final = dfa.xs(steps[-1], level="Step")
+    thr = final["pmt_threshold"].values
+    tp10, tp90 = np.percentile(thr, [10, 90]); tmean = thr.mean()
+    ax.axhspan(tp10, tp90, color="#ef4444", alpha=0.08,
+               label=f"Threshold 10\u201390th: [{tp10:.2f}, {tp90:.2f}]")
+    ax.axhline(tmean, color="#ef4444", ls="--", label=f"Mean \u03b8 = {tmean:.2f}")
+    ax.axhline(model.INITIAL_BELIEF, color="gray", ls=":",
+               label=f"Prior = {model.INITIAL_BELIEF:.2f}")
+    ax.set(xlabel="Time step", ylabel="$P(H_1)$")
+    ax.legend(fontsize=7); ax.grid(alpha=0.3)
+    ax.set_title("Bayesian belief evolution", fontweight="bold")
+    fig.tight_layout()
+    return fig
+
+
+def _fig_network(model):
+    """Network with retrofit status; label = personal flood count."""
+    fig, ax = plt.subplots(figsize=(7, 5.4))
+    agents = list(model.agents)
+    _draw_edges(ax, model, alpha=0.3)
+    na = [a for a in agents if not a.is_retrofitted]
+    ad = [a for a in agents if a.is_retrofitted]
+    if na:
+        ax.scatter([a.x for a in na], [a.y for a in na], c="#e2e8f0", s=120,
+                   edgecolor="black", linewidth=0.8, zorder=2)
+    if ad:
+        sc = ax.scatter([a.x for a in ad], [a.y for a in ad],
+                        c=[a.retrofit_step for a in ad], cmap="YlGn", s=130,
+                        edgecolor="black", linewidth=0.8, zorder=3,
+                        vmin=1, vmax=max(1, model.current_step))
+        fig.colorbar(sc, ax=ax, shrink=0.7).set_label("Retrofit step")
+    ax.set(xlabel="x", ylabel="y", xlim=(-0.02, 1.02), ylim=(-0.02, 1.02))
+    ax.set_aspect("equal"); ax.grid(alpha=0.3)
+    ax.legend(handles=[Patch(facecolor="#e2e8f0", edgecolor="black", label="Not retrofitted"),
+                       Patch(facecolor="#31a354", edgecolor="black", label="Retrofitted")],
+              loc="upper right", fontsize=8)
+    ax.set_title("Social network (color = retrofit step)", fontweight="bold")
+    fig.tight_layout()
+    return fig
+
+
+def _fig_spatial(model):
+    """Spatial map: elevation colormap with retrofitted homes ringed green."""
+    fig, ax = plt.subplots(figsize=(7, 5.4))
+    agents = list(model.agents)
+    _draw_edges(ax, model, alpha=0.2)
+    sc = ax.scatter([a.x for a in agents], [a.y for a in agents],
+                    c=[a.z for a in agents], cmap="terrain", s=110, alpha=0.75,
+                    edgecolor="black", linewidth=0.5, zorder=2)
+    for a in agents:
+        if a.is_retrofitted:
+            ax.scatter(a.x, a.y, facecolors="none", edgecolors=CLR_RETRO,
+                       s=150, linewidths=2.0, zorder=3)
+    fig.colorbar(sc, ax=ax, shrink=0.75).set_label("Elevation")
+    ax.set(xlabel="x", ylabel="y", xlim=(-0.02, 1.02), ylim=(-0.02, 1.02))
+    ax.set_aspect("equal")
+    ax.legend(handles=[Patch(facecolor="none", edgecolor=CLR_RETRO, label="Retrofitted"),
+                       Patch(facecolor="#cbd5e1", edgecolor="black", label="Not retrofitted")],
+              loc="upper right", fontsize=8)
+    ax.set_title("Spatial: elevation & retrofit status", fontweight="bold")
+    fig.tight_layout()
+    return fig
+
+
 def _config_chips(p):
     import streamlit as st
     chips = [
@@ -932,34 +1091,26 @@ def _page_results():
                      f"<div class='val'>{val}</div></div>", unsafe_allow_html=True)
     st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("#### (a)  Adoption over time")
-        fig, ax = plt.subplots(figsize=(6, 4.2))
-        ax.plot(mdf.index, mdf["pct_retrofitted"], color=CLR_SKY_DK, lw=2)
-        ax.fill_between(mdf.index, mdf["pct_retrofitted"], color=CLR_SKY, alpha=0.15)
-        ax.set(xlabel="Time step", ylabel="Retrofitted (%)",
-               xlim=(1, len(mdf)), ylim=(0, 100))
-        ax.grid(alpha=0.3)
-        st.pyplot(fig); plt.close(fig)
-    with c2:
-        st.markdown("#### (b)  Cumulative retrofit rate vs observed")
-        fig, ax = plt.subplots(figsize=(6, 4.2))
-        x = np.arange(3); w = 0.38
-        bm = ax.bar(x - w / 2, cum, w, label="Model", color=CLR_MODEL, edgecolor="black")
-        bo = ax.bar(x + w / 2, obs, w, label="Observed", color=CLR_OBS, edgecolor="black")
-        for bars in (bm, bo):
-            for bar in bars:
-                h = bar.get_height()
-                if h > 0:
-                    ax.text(bar.get_x() + bar.get_width() / 2, h + 1, f"{h:.0f}",
-                            ha="center", va="bottom", fontsize=9, fontweight="bold")
-        ax.set(xlabel="Flood experience (cumulative, at most k)",
-               ylabel="Retrofit rate (%)",
-               ylim=(0, max(max(cum), max(obs)) * 1.25 + 1))
-        ax.set_xticks(x); ax.set_xticklabels(["0", "\u2264 4", "5+ (all)"])
-        ax.legend(); ax.grid(alpha=0.3, axis="y")
-        st.pyplot(fig); plt.close(fig)
+    model = st.session_state.get("model_obj")
+    if model is None:
+        st.warning("Run the simulation again to regenerate the figures.")
+        return
+
+    # ---- six figures in a 3 x 2 grid ----
+    figs = [
+        ("(a)  Adoption over time & flood levels", _fig_adoption_flood(model)),
+        ("(b)  Model vs observed (cumulative)",    _fig_comparison(model, cum, obs)),
+        ("(c)  Retrofit adoption by elevation",    _fig_elevation_comparison(model)),
+        ("(d)  Bayesian belief evolution",         _fig_belief_evolution(model)),
+        ("(e)  Social network",                    _fig_network(model)),
+        ("(f)  Spatial map \u2014 elevation & retrofit", _fig_spatial(model)),
+    ]
+    for i in range(0, 6, 2):
+        col_l, col_r = st.columns(2)
+        for col, (title, fig) in zip((col_l, col_r), figs[i:i + 2]):
+            with col:
+                st.markdown(f"#### {title}")
+                st.pyplot(fig); plt.close(fig)
 
     st.markdown("#### Cumulative rates  (model vs survey)")
     st.dataframe(pd.DataFrame({
@@ -968,132 +1119,205 @@ def _page_results():
         "Observed (%)": [f"{o:.1f}" for o in obs]}),
         hide_index=True, use_container_width=True)
 
-    st.markdown("#### Spatial retrofit map  (final step)")
-    pos = st.session_state["final_positions"]
-    fig, ax = plt.subplots(figsize=(7, 5.2))
-    retro = pos[:, 3] == 1
-    ax.scatter(pos[~retro, 0], pos[~retro, 1], c=CLR_NOT, s=30,
-               edgecolors="gray", linewidths=0.4, label="Not retrofitted")
-    ax.scatter(pos[retro, 0], pos[retro, 1], c=CLR_RETRO, s=42,
-               edgecolors="black", linewidths=0.4, label="Retrofitted")
-    ax.set(xlabel="x", ylabel="y   (elevation increases with x \u2192)",
-           xlim=(0, 1), ylim=(0, 1))
-    ax.legend(loc="upper right"); ax.set_aspect("equal")
-    st.pyplot(fig); plt.close(fig)
+    # ---- data export (as in the previous app) ----
+    st.divider()
+    st.markdown("#### \U0001F4E5 Export data")
+    e1, e2 = st.columns(2)
+    with e1:
+        st.download_button("Download agent data (CSV)",
+                           st.session_state["agent_df"].to_csv(),
+                           "agent_data.csv", "text/csv", use_container_width=True)
+    with e2:
+        st.download_button("Download model data (CSV)",
+                           mdf.to_csv(), "model_data.csv", "text/csv",
+                           use_container_width=True)
 
 
 def _page_documentation():
     import streamlit as st
     st.markdown("## \U0001F4D8 Documentation")
     st.markdown('<div class="tab-desc">A household flood-retrofit agent-based '
-                'model built on Bayesian belief updating and Protection '
-                'Motivation Theory, calibrated to the NYC Flood Vulnerability '
-                'Index Survey.</div>', unsafe_allow_html=True)
+                'model built on Bayesian belief updating in odds form and '
+                'Protection Motivation Theory, calibrated to the New York City '
+                'Flood Vulnerability Index Survey.</div>', unsafe_allow_html=True)
 
+    # ---- 1 Motivation ----
     st.markdown('<div class="doc-h">1 &nbsp; Motivation</div>', unsafe_allow_html=True)
     st.markdown(
         "Coastal households in New York face rising flood risk, yet only a "
         "minority retrofit their homes. This model asks **why** \u2014 what mix of "
         "personal flood experience, social influence, and trusted information "
-        "leads a household to invest in structural protection \u2014 and lets a user "
-        "explore how those forces combine to produce neighbourhood-scale "
-        "adoption. It is designed as a research instrument: every mechanism is "
-        "grounded in survey evidence and every parameter is exposed for "
-        "experimentation.")
+        "leads a household to invest in structural protection \u2014 and lets the "
+        "user explore how those forces combine to produce neighbourhood-scale "
+        "adoption. Every mechanism is grounded in survey evidence, and every "
+        "parameter is exposed on the Settings page for experimentation.")
 
+    # ---- 2 Overview ----
     st.markdown('<div class="doc-h">2 &nbsp; Overview</div>', unsafe_allow_html=True)
     st.markdown(
-        "Each agent is a household at a fixed location with an elevation *z*. "
-        "It holds a **belief** $P(H_1)$ that it should retrofit its home, and "
-        "retrofits once that belief crosses its personal **Protection Motivation "
-        "Theory (PMT) threshold** $\\theta$. Belief is revised over time as "
-        "evidence arrives through three channels. Retrofitting is **absorbing**: "
-        "a household that has retrofitted takes no further flood damage and makes "
-        "no further decisions. Floods are drawn each step from a Generalized "
-        "Extreme Value distribution fitted to user-specified return periods.")
+        "Each agent is a household at a fixed location with elevation $z_i$. It "
+        "holds a subjective belief $P_i(H_1)\\in[0,1]$ that it should retrofit, "
+        "and it retrofits at the first moment that belief reaches its personal "
+        "Protection Motivation Theory (PMT) threshold $\\theta_i$. Belief is "
+        "revised over time as evidence arrives through three channels. "
+        "Retrofitting is **absorbing**: once a household retrofits it takes no "
+        "further flood damage and makes no further decisions. Each step, a "
+        "global flood level is drawn from a Generalized Extreme Value "
+        "distribution fitted to user-specified return periods.")
 
+    # ---- 3 Theoretical framework ----
     st.markdown('<div class="doc-h">3 &nbsp; Theoretical framework</div>',
                 unsafe_allow_html=True)
-    st.markdown(
-        "The decision core combines two well-established theories. **Bayesian "
-        "belief updating** (Jaynes, 2003) governs how evidence changes belief; "
-        "**Protection Motivation Theory** (Rogers, 1975; Floyd, Prentice-Dunn & "
-        "Rogers, 2000) supplies the threat- and coping-appraisal logic that "
-        "determines when belief becomes action. Belief is updated in **odds "
-        "form**, which is mathematically equivalent to the probability form of "
-        "Bayes\u2019 theorem but eliminates redundant normalising terms, leaving "
-        "only the evidence ratios that matter for behaviour (Kass & Raftery, 1995).")
-    st.latex(r"\text{posterior odds} \;=\; \text{prior odds} \;\times\; "
-             r"\text{Bayes factor}")
-    st.markdown(
-        "Each Bayes factor is a **base factor** multiplied by a **conditional "
-        "multiplier**. The multiplier equals 1 \u2014 no effect \u2014 whenever its "
-        "trigger is absent, so a channel that does not fire leaves belief "
-        "unchanged.")
 
-    st.markdown('<div class="doc-h">4 &nbsp; The three evidence channels</div>',
+    st.markdown("#### 3.1 &nbsp; Bayesian belief updating \u2014 full formulation")
+    st.markdown(
+        "Each agent maintains a belief $P_i(H_1)$, where $H_1$ = \u201cI should "
+        "retrofit my house\u201d and $H_0$ = \u201cI should not.\u201d Every evidence event "
+        "is processed in three algebraic steps (Jaynes, 2003, Ch. 4; Kass & "
+        "Raftery, 1995).")
+    st.markdown("**Step 1 \u2014 Convert probability to odds.** Odds give a natural "
+                "multiplicative framework for accumulating evidence:")
+    st.latex(r"O_i = \frac{P_i(H_1)}{1 - P_i(H_1)}")
+    st.markdown("For example, a belief of $P_i(H_1)=0.08$ corresponds to odds "
+                "$O_i = 0.08/0.92 \\approx 0.087$ \u2014 the agent considers $H_0$ "
+                "about eleven times more likely than $H_1$.")
+    st.markdown("**Step 2 \u2014 Multiply the odds by a Bayes factor.** A Bayes "
+                "factor $\\lambda$ is the likelihood ratio of a single "
+                "observation (Kass & Raftery, 1995):")
+    st.latex(r"\lambda = \frac{P(\text{evidence}\mid H_1)}{P(\text{evidence}\mid H_0)}"
+             r"\qquad O_i^{\text{post}} = O_i^{\text{prior}} \times \lambda")
+    st.markdown("A factor $\\lambda>1$ shifts belief toward retrofitting; "
+                "$\\lambda=1$ is uninformative. When several channels fire in "
+                "the same step their factors compose multiplicatively, and "
+                "because multiplication is commutative the update is "
+                "order-independent (Good, 1950):")
+    st.latex(r"O_i^{\text{post}} = O_i^{\text{prior}}\times "
+             r"\lambda_{\text{exp}}\times\lambda_{\text{prox}}\times\lambda_{\text{info}}")
+    st.markdown("**Step 3 \u2014 Convert the posterior odds back to a probability:**")
+    st.latex(r"P_i^{\text{post}}(H_1) = \frac{O_i^{\text{post}}}{1 + O_i^{\text{post}}}")
+    st.markdown("This is algebraically identical to the standard form of Bayes\u2019 "
+                "theorem; the advantage is that each evidence source is a single "
+                "scalar and sequential updates are just repeated multiplication.")
+
+    st.markdown("#### 3.2 &nbsp; Channel structure: base factor \u00d7 conditional multiplier")
+    st.markdown(
+        "Each of the three channels contributes a **base factor** times a "
+        "**conditional multiplier**. The multiplier equals 1 \u2014 no effect \u2014 "
+        "whenever its trigger is absent, so a channel that does not fire leaves "
+        "belief unchanged. This keeps every channel to at most two interpretable "
+        "parameters and lets a channel switch cleanly on and off.")
+
+    st.markdown("#### 3.3 &nbsp; Channel 1: personal flood experience")
+    st.markdown(
+        "Each step a global flood level $f_t$ is drawn from a GEV distribution "
+        "(Coles, 2001). Agent $i$ is flooded when $f_t > z_i$. The update is "
+        "asymmetric \u2014 flood years are psychologically salient while dry years "
+        "are cognitively inert (availability heuristic; Tversky & Kahneman, "
+        "1974). On a flood, the base per-flood factor $\\lambda_{flood}$ is "
+        "multiplied by a **perceived-severity** multiplier $\\lambda_{severity}$ "
+        "for households that expect flood damage to worsen (Rogers, 1975; "
+        "Floyd, Prentice-Dunn & Rogers, 2000):")
+    st.latex(r"""\lambda_{\text{exp},i}^{(t)} =
+\begin{cases}
+\lambda_{flood}\cdot\lambda_{severity} & f_t > z_i \ \text{and agent expects rising damage}\\
+\lambda_{flood} & f_t > z_i \ \text{and agent does not}\\
+1 & f_t \le z_i \quad(\text{not flooded; no update})
+\end{cases}""")
+    st.markdown("A single per-flood factor is used (no separate first-flood "
+                "term). Survey anchors: $\\lambda_{flood}=1.52$ (owner per-flood "
+                "odds ratio) and $\\lambda_{severity}=2.40$ (expecting- vs "
+                "not-expecting rising damage). Because each flood contributes "
+                "only a modest factor, an agent must experience several floods "
+                "before belief nears the threshold \u2014 consistent with observed "
+                "low adoption despite repeated flooding.")
+
+    st.markdown("#### 3.4 &nbsp; Channel 2: proximity-based social learning")
+    st.markdown(
+        "Network ties are binary: agents $i$ and $j$ are connected when their "
+        "Euclidean distance $d(i,j)\\le$ `DISTANCE_THRESHOLD`. Let "
+        "$\\mathcal{N}_i^{(t)}$ be the connected neighbours **newly observed** "
+        "to have retrofitted at step $t$ (each counted once \u2014 one-shot "
+        "learning). For each such neighbour the base factor $\\lambda_{social}$ "
+        "(Granovetter, 1978) is multiplied by a similarity multiplier "
+        "$\\lambda_{similarity}$ when the neighbour is **similar**, i.e. their "
+        "Gower similarity meets the threshold (Gower, 1971; McPherson et al., "
+        "2001):")
+    st.latex(r"""\lambda_{\text{prox},ij} =
+\begin{cases}
+\lambda_{social}\cdot\lambda_{similarity} & j\ \text{retrofitted and } S(i,j)\ge S^\ast\\
+\lambda_{social} & j\ \text{retrofitted and } S(i,j)< S^\ast\\
+1 & \text{no newly-retrofitted neighbour}
+\end{cases}""")
+    st.markdown("Similarity is the fraction of discrete attributes on which two "
+                "agents agree,")
+    st.latex(r"S(i,j) = \frac{1}{A}\sum_{a=1}^{A}\mathbb{1}\!\left[x_{ia}=x_{ja}\right]"
+             r"\ \in[0,1]\quad(\text{Gower, 1971})")
+    st.markdown("so a retrofitting neighbour who resembles the agent carries "
+                "more weight than a dissimilar one, and with no retrofitted "
+                "neighbour the channel is inert.")
+
+    st.markdown("#### 3.5 &nbsp; Channel 3: trusted information")
+    st.markdown(
+        "Applied **once, at initialisation**, because trusted-information and "
+        "forecast-preparation are stable household traits rather than repeated "
+        "events. Households with a trusted flood-information source apply a base "
+        "factor $\\lambda_{info}$, multiplied by a forecast multiplier "
+        "$\\lambda_{forecast}$ for those who also prepare on the basis of flood "
+        "forecasts:")
+    st.latex(r"""\lambda_{\text{info},i} =
+\begin{cases}
+\lambda_{info}\cdot\lambda_{forecast} & \text{trusted info and forecast-preparer}\\
+\lambda_{info} & \text{trusted info only}\\
+1 & \text{no trusted information}
+\end{cases}""")
+    st.markdown("In the survey, having a trusted source alone is weak "
+                "(odds ratio \u2248 1.39, n.s.) while forecast preparation is the "
+                "stronger amplifier (odds ratio \u2248 3.2), which is why the base "
+                "is the weaker term and the multiplier the stronger one. This "
+                "channel represents an informational prior that lifts belief at "
+                "$t=0$ for informed households.")
+
+    # ---- 4 Static traits ----
+    st.markdown('<div class="doc-h">4 &nbsp; Static household traits</div>',
                 unsafe_allow_html=True)
-    st.markdown("**Channel 1 \u2014 Personal flood experience.** In any step where "
-                "the flood level exceeds the household\u2019s elevation, belief-odds "
-                "are multiplied by the base per-flood factor $\\lambda_{flood}$, "
-                "times a **perceived-severity** multiplier $\\lambda_{severity}$ "
-                "for households that expect flood damage to worsen over time. "
-                "Years without a flood produce no update, reflecting the "
-                "availability heuristic (Tversky & Kahneman, 1974).")
-    st.latex(r"\text{odds} \;\times=\; \lambda_{flood}\cdot"
-             r"\big(\lambda_{severity}\ \text{if expects rising damage else}\ 1\big)")
-    st.markdown("**Channel 2 \u2014 Proximity-based social learning.** For each "
-                "connected neighbour newly observed to have retrofitted, "
-                "belief-odds are multiplied by the base factor $\\lambda_{social}$ "
-                "(Granovetter, 1978), times a similarity multiplier "
-                "$\\lambda_{similarity}$ when that neighbour is **similar** \u2014 "
-                "their Gower similarity $S(i,j)$ meets the threshold (Gower, 1971; "
-                "McPherson et al., 2001). With no retrofitted neighbour the "
-                "channel is inert.")
-    st.latex(r"\text{odds} \;\times=\; \lambda_{social}\cdot"
-             r"\big(\lambda_{similarity}\ \text{if}\ S(i,j)\ge \text{threshold else}\ 1\big)")
-    st.markdown("**Channel 3 \u2014 Trusted information.** Applied **once, at "
-                "initialisation**: households with a trusted flood-information "
-                "source multiply belief-odds by $\\lambda_{info}$, times a "
-                "forecast multiplier $\\lambda_{forecast}$ for those who also "
-                "prepare on the basis of flood forecasts. Because trusted-"
-                "information and forecast-preparation are stable household "
-                "traits, this channel represents an informational prior rather "
-                "than a repeated update.")
-    st.latex(r"\text{odds} \;\times=\; \lambda_{info}\cdot"
-             r"\big(\lambda_{forecast}\ \text{if forecast-preparer else}\ 1\big)")
+    st.markdown(
+        "Three binary traits gate the conditional multipliers above: *expects "
+        "rising damage*, *has trusted information*, and *prepares on forecasts*. "
+        "Each is drawn once at $t=0$ as an independent Bernoulli variable using "
+        "survey-anchored fractions among never-flooded households \u2014 0.69, 0.48, "
+        "and 0.65 respectively \u2014 and is fixed for the life of the simulation.")
 
-    st.markdown('<div class="doc-h">5 &nbsp; Static household traits</div>',
+    # ---- 5 Decision rule ----
+    st.markdown('<div class="doc-h">5 &nbsp; Decision rule (PMT threshold)</div>',
                 unsafe_allow_html=True)
     st.markdown(
-        "Three binary traits \u2014 *expects rising damage*, *has trusted "
-        "information*, *prepares on forecasts* \u2014 are drawn once at $t=0$ as "
-        "independent Bernoulli variables using survey-anchored fractions "
-        "(0.69, 0.48, 0.65 respectively among never-flooded households). They "
-        "are fixed for the life of the simulation; they gate the conditional "
-        "multipliers described above.")
+        "A household retrofits at the first step its belief reaches its "
+        "threshold, $P_i(H_1)\\ge\\theta_i$ (Rogers, 1975). Thresholds are "
+        "heterogeneous, drawn from a Normal distribution clipped to a user-set "
+        "band $[\\theta_{low},\\theta_{high}]$; belief is homogeneous at $t=0$. "
+        "Because only the gap between belief and threshold governs behaviour, a "
+        "single heterogeneous quantity (the threshold) is sufficient and "
+        "identifiable \u2014 belief and threshold spreads are not separately "
+        "estimated.")
+    st.latex(r"\text{retrofit}_i \iff P_i(H_1)\ge\theta_i,\qquad "
+             r"\theta_i\sim\mathcal{N}(\mu_\theta,\sigma_\theta)\ \text{clipped to}\ "
+             r"[\theta_{low},\theta_{high}]")
 
-    st.markdown('<div class="doc-h">6 &nbsp; Decision rule</div>', unsafe_allow_html=True)
-    st.markdown(
-        "A household retrofits at the first step its belief reaches its PMT "
-        "threshold, $P(H_1) \\ge \\theta_i$. Thresholds are heterogeneous, drawn "
-        "from a Normal distribution clipped to a user-set band; belief itself is "
-        "homogeneous at $t=0$. Because only the gap between belief and threshold "
-        "governs behaviour, a single heterogeneous quantity (the threshold) is "
-        "sufficient and identifiable.")
-
-    st.markdown('<div class="doc-h">7 &nbsp; Understanding the Bayes factors</div>',
+    # ---- 6 Understanding the Bayes factors ----
+    st.markdown('<div class="doc-h">6 &nbsp; Understanding the Bayes factors</div>',
                 unsafe_allow_html=True)
     st.markdown(
-        "A Bayes factor greater than 1 is evidence **for** retrofitting; it "
-        "multiplies the odds. Two floods contribute $\\lambda_{flood}^2$; a flood "
-        "experienced by a household that expects rising damage contributes "
+        "A Bayes factor greater than 1 is evidence for retrofitting and "
+        "multiplies the odds. Two floods contribute $\\lambda_{flood}^2$; a "
+        "flood experienced by a household expecting rising damage contributes "
         "$\\lambda_{flood}\\,\\lambda_{severity}$. Working in odds means these "
         "combine by multiplication and the update is order-independent \u2014 the "
-        "same evidence yields the same belief regardless of the sequence in "
-        "which it arrives (Good, 1950).")
+        "same evidence yields the same belief regardless of the order in which "
+        "it arrives (Good, 1950).")
 
-    st.markdown('<div class="doc-h">8 &nbsp; Key properties</div>', unsafe_allow_html=True)
+    # ---- 7 Key properties ----
+    st.markdown('<div class="doc-h">7 &nbsp; Key properties</div>',
+                unsafe_allow_html=True)
     st.markdown(
         "- **Absorbing retrofit.** Adaptation is permanent; retrofitted homes "
         "leave the risk pool.\n"
@@ -1102,52 +1326,77 @@ def _page_documentation():
         "pattern in the survey.\n"
         "- **Parsimony.** Only the threshold is heterogeneous; each channel adds "
         "at most one base factor and one conditional multiplier.\n"
-        "- **Identifiability.** Only belief-minus-threshold enters the decision, "
-        "so belief and threshold spreads are not separately estimated.")
+        "- **Identifiability.** Only belief minus threshold enters the decision, "
+        "so their spreads are not separately estimated.\n"
+        "- **Order independence.** Multiplicative odds updating makes belief "
+        "path-independent for a given set of evidence.")
 
-    st.markdown('<div class="doc-h">9 &nbsp; Parameters</div>', unsafe_allow_html=True)
+    # ---- 8 Parameters ----
+    st.markdown('<div class="doc-h">8 &nbsp; Parameters</div>', unsafe_allow_html=True)
     st.markdown(
-        "All parameters live on the **Settings** page. Survey-anchored starting "
-        "values: $\\lambda_{flood}=1.52$, $\\lambda_{severity}=2.40$, "
-        "$\\lambda_{forecast}\\approx3.2$, trait fractions 0.69 / 0.48 / 0.65. "
-        "The opening defaults are de-escalated from these raw point estimates so "
-        "the model is non-saturated out of the box: each survey odds ratio was "
-        "estimated holding the others at baseline, so stacking them all at once "
-        "over-drives belief. Tune each factor upward toward its survey anchor "
-        "(shown in every field\u2019s tooltip) while watching the cumulative bars.")
+        "All parameters live on the **Settings** page, grouped into core "
+        "decision drivers (belief, the three channels, the threshold) and "
+        "structural environment settings. Survey-anchored starting values: "
+        "$\\lambda_{flood}=1.52$, $\\lambda_{severity}=2.40$, "
+        "$\\lambda_{forecast}\\approx3.2$; trait fractions 0.69 / 0.48 / 0.65. "
+        "The opening defaults are deliberately de-escalated from these raw "
+        "point estimates so the model is non-saturated out of the box: each "
+        "survey odds ratio was estimated holding the other channels at "
+        "baseline, so stacking them all at once over-drives belief. Tune each "
+        "factor upward toward its survey anchor (shown in every field\u2019s "
+        "tooltip) while watching the cumulative bars on the Results page.")
 
-    st.markdown('<div class="doc-h">10 &nbsp; Calibration target</div>',
+    # ---- 9 Calibration target ----
+    st.markdown('<div class="doc-h">9 &nbsp; Calibration target</div>',
                 unsafe_allow_html=True)
     st.markdown(
         "The Results page compares the model\u2019s **cumulative** \u201cat most $k$ "
-        "floods\u201d retrofit rate against the survey values **18.0 / 22.3 / 27.4 %** "
-        "for the 0 / $\\le 4$ / all bins. Cumulative targets are used in "
-        "preference to per-bin rates because they are more robust given the "
+        "floods\u201d retrofit rate against the survey values **18.0 / 22.3 / "
+        "27.4 %** for the 0 / $\\le 4$ / all bins. Cumulative targets are "
+        "preferred over per-bin rates because they are more robust given the "
         "survey\u2019s modest sample size.")
 
+    # ---- 10 Results plots ----
+    st.markdown('<div class="doc-h">10 &nbsp; Reading the results</div>',
+                unsafe_allow_html=True)
+    st.markdown(
+        "The Results page shows six figures in a 3\u00d72 grid: "
+        "**(a)** adoption over time with the annual flood series; "
+        "**(b)** the model-vs-observed cumulative comparison; "
+        "**(c)** retrofit rate by elevation tercile; "
+        "**(d)** Bayesian belief evolution with the threshold band; "
+        "**(e)** the social network coloured by retrofit step; and "
+        "**(f)** the spatial map of elevation with retrofitted homes ringed. "
+        "Agent- and model-level data can be downloaded as CSV beneath the "
+        "figures.")
+
+    # ---- 11 Workflow ----
     st.markdown('<div class="doc-h">11 &nbsp; Workflow</div>', unsafe_allow_html=True)
     st.markdown(
         "1. Open **Settings** and set parameters (or keep the defaults).  \n"
         "2. Press **Run Simulation** in the left rail; the progress bar beneath "
         "the button tracks the run.  \n"
-        "3. Open **Results** to inspect the adoption curve, the cumulative "
-        "comparison against survey data, and the spatial retrofit map. A compact "
-        "summary of the run\u2019s settings appears at the top of the page.")
+        "3. Open **Results** for the six figures, the cumulative comparison "
+        "against survey data, and CSV export. A compact summary of the run\u2019s "
+        "settings appears at the top of the page.")
 
+    # ---- 12 References ----
     st.markdown('<div class="doc-h">12 &nbsp; References</div>', unsafe_allow_html=True)
     st.markdown(
         "Coles (2001) *An Introduction to Statistical Modeling of Extreme "
-        "Values.* \u00b7 Ester et al. (1996) *A density-based algorithm for "
-        "discovering clusters* (DBSCAN). \u00b7 Floyd, Prentice-Dunn & Rogers (2000) "
-        "*A meta-analysis of research on Protection Motivation Theory.* \u00b7 Good "
-        "(1950) *Probability and the Weighing of Evidence.* \u00b7 Gower (1971) *A "
-        "general coefficient of similarity.* \u00b7 Granovetter (1978) *Threshold "
-        "models of collective behavior.* \u00b7 Jaynes (2003) *Probability Theory: "
-        "The Logic of Science.* \u00b7 Kass & Raftery (1995) *Bayes factors.* \u00b7 "
-        "McPherson, Smith-Lovin & Cook (2001) *Birds of a feather: homophily in "
-        "social networks.* \u00b7 Rogers (1975) *A protection motivation theory of "
-        "fear appeals.* \u00b7 Tversky & Kahneman (1974) *Judgment under uncertainty: "
-        "heuristics and biases.*")
+        "Values.* \u00b7 Ester, Kriegel, Sander & Xu (1996) *A density-based "
+        "algorithm for discovering clusters* (DBSCAN). \u00b7 Floyd, Prentice-Dunn "
+        "& Rogers (2000) *A meta-analysis of research on Protection Motivation "
+        "Theory.* \u00b7 Good (1950) *Probability and the Weighing of Evidence.* "
+        "\u00b7 Gower (1971) *A general coefficient of similarity and some of its "
+        "properties.* \u00b7 Granovetter (1978) *Threshold models of collective "
+        "behavior.* \u00b7 Jaynes (2003) *Probability Theory: The Logic of "
+        "Science.* \u00b7 Kass & Raftery (1995) *Bayes factors.* \u00b7 McPherson, "
+        "Smith-Lovin & Cook (2001) *Birds of a feather: homophily in social "
+        "networks.* \u00b7 Rogers (1975) *A protection motivation theory of fear "
+        "appeals and attitude change.* \u00b7 Tversky & Kahneman (1974) *Judgment "
+        "under uncertainty: heuristics and biases.*")
+
 
 
 # ---------------------------------------------------------------------------
@@ -1166,6 +1415,11 @@ def _run_app():
         st.stop()
 
     ss = st.session_state
+    # Apply any pending navigation request BEFORE the radio widget is created.
+    # (Streamlit forbids mutating a widget's own key after instantiation, so
+    # the run handler sets ss["pending_nav"] and we consume it here instead.)
+    if ss.get("pending_nav"):
+        ss["nav"] = ss.pop("pending_nav")
     if "nav" not in ss:
         ss["nav"] = "\U0001F4CA  Results" if ss.get("has_run") else "\u2699\ufe0f  Settings"
 
@@ -1203,14 +1457,21 @@ def _run_app():
         params = _collect_params()
         try:
             model = _run_with_progress(params, progress_slot)
+            ss["model_obj"] = model
             ss["model_df"] = model.get_model_dataframe()
+            ss["agent_df"] = model.get_agent_dataframe()
             ss["cum_rates"] = cumulative_model_rates(
                 list(model.agents), params["OBSERVED_CUM_MAX"])
             ss["final_positions"] = np.array(
-                [[a.x, a.y, a.z, int(a.is_retrofitted)] for a in model.agents])
+                [[a.x, a.y, a.z, int(a.is_retrofitted), int(a.flood_count),
+                  a.belief, a.pmt_threshold, int(a.neighborhood_id)]
+                 for a in model.agents])
+            ss["flood_history"] = list(model.flood_history)
             ss["run_params"] = params
             ss["has_run"] = True
-            ss["nav"] = "\U0001F4CA  Results"
+            # Request navigation to Results on the next run (applied before the
+            # widget is created), never by mutating the widget key here.
+            ss["pending_nav"] = "\U0001F4CA  Results"
             st.rerun()
         except Exception as e:
             import traceback
