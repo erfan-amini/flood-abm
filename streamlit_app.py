@@ -1682,7 +1682,7 @@ def _workflow_svg():
       <!-- 2. assign attributes + prior belief -->
       {box(SX-150, 102, 300, 56, "#f1f5f9", "#cbd5e1",
            "Assign attributes &amp; prior belief",
-           "risk perception, trusted info, forecast info", INK)}
+           "risk perception, trusted info, forecast info", tcol=INK)}
       {vline(SX, 158, 210)}
 
       <!-- ===== EACH TIME STEP loop box (right edge between Ch2 and Ch3) ===== -->
@@ -1693,7 +1693,7 @@ def _workflow_svg():
 
       <!-- annual flood level -->
       {box(SX-115, 256, 230, 48, "#e0f2fe", SKY, "Annual flood level",
-           "GEV sample f\u209c", INK, fs=14)}
+           "GEV sample f\u209c", tcol=INK, fs=14)}
 
       <!-- channel row: y = 356..432 ; Ch1 & Ch2 inside, Ch3 outside right -->
       {box(70, 356, 180, 76, C1, "#0369a1", "Channel 1",
@@ -1704,48 +1704,49 @@ def _workflow_svg():
            "Information (t=0)", "\u03bb_info \u00d7 \u03bb_forecast", fs=14)}
 
       <!-- flood level feeds Channel 1 and Channel 2 (clean split) -->
-      {path([(SX,304),(160,304),(160,356)], C1, marker="ah1")}
-      {path([(SX,304),(390,304),(390,356)], C2, marker="ah2")}
-      {lbl(232, 330, "if flooded", C1, size=9.5, italic=True)}
-      {lbl(430, 330, "if neighbour retrofits", C2, size=9.5, italic=True)}
+      {path([(SX,306),(160,306),(160,354)], C1, marker="ah1")}
+      {path([(SX,306),(390,306),(390,354)], C2, marker="ah2")}
+      {lbl(160, 340, "if flooded", C1, size=13, italic=True)}
+      {lbl(478, 340, "if a neighbour", C2, size=13, italic=True)}
+      {lbl(478, 355, "retrofits", C2, size=13, italic=True)}
 
       <!-- Channel 3 fed once from the prior belief (routed down the right) -->
-      {path([(SX+150,130),(715,130),(715,356)], C3, dash="6 4", marker="aho")}
-      {lbl(710, 122, "once, at t=0", C3, size=10, anchor="end")}
+      {path([(SX+152,130),(715,130),(715,354)], C3, dash="6 4", marker="aho")}
+      {lbl(712, 120, "once, at t=0", C3, size=13, anchor="end")}
 
       <!-- all three channels converge on 'update belief' -->
-      {path([(160,432),(160,462),(SX-45,462),(SX-45,486)], C1)}
-      {path([(390,432),(390,462),(SX+45,462),(SX+45,486)], C2)}
-      {path([(715,432),(715,505),(SX+115,505)], C3)}
+      {path([(160,434),(160,464),(SX-46,464),(SX-46,485)], C1, marker="ah1")}
+      {path([(390,434),(390,464),(SX+46,464),(SX+46,485)], C2, marker="ah2")}
+      {path([(715,434),(715,512),(SX+117,512)], C3, marker="aho")}
 
       <!-- update belief -->
       {box(SX-115, 488, 230, 48, "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)",
-           "posterior odds = prior odds \u00d7 Bayes factors", INK, fs=13.5)}
-      {vline(SX, 536, 566)}
+           "posterior odds = prior odds \u00d7 Bayes factors", tcol=INK, fs=13.5)}
+      {vline(SX, 536, 564)}
 
       <!-- decision diamond (inside loop) -->
       <polygon points="{SX},566 {SX+115},602 {SX},638 {SX-115},602" fill="#fff7ed"
                stroke="{C3}" stroke-width="1.6"/>
-      {lbl(SX, 598, "P(H\u2081) \u2265 \u03b8 ?", INK, size=13)}
-      {lbl(SX, 616, "PMT threshold", MUT, weight="500", size=10)}
+      {lbl(SX, 598, "P(H\u2081) \u2265 \u03b8 ?", INK, size=14)}
+      {lbl(SX, 617, "PMT threshold", MUT, weight="500", size=11.5)}
 
       <!-- NO: loop back up to the flood-level box (routed on the far left) -->
-      {path([(SX-115,602),(25,602),(25,280),(SX-115,280)])}
-      {lbl(100, 594, "no", MUT, size=11)}
-      <rect x="8" y="380" width="20" height="130" fill="#ffffff" opacity="0.85"/>
-      <text x="20" y="445" text-anchor="middle" font-size="10.5" fill="{MUT}"
-            font-style="italic" transform="rotate(-90 20 445)">carry belief to next year</text>
+      {path([(SX-117,602),(25,602),(25,280),(SX-117,280)])}
+      {lbl(105, 592, "no", MUT, size=13)}
+      <rect x="6" y="372" width="22" height="150" fill="#ffffff" opacity="0.9"/>
+      <text x="20" y="447" text-anchor="middle" font-size="12.5" fill="{MUT}"
+            font-style="italic" transform="rotate(-90 20 447)">carry belief to next year</text>
 
       <!-- YES: down to retrofit (below the loop) -->
-      {path([(SX,638),(SX,668)], GRN, marker="ahg")}
-      {lbl(SX+24, 656, "yes", GRN, size=11, anchor="start")}
+      {path([(SX,638),(SX,667)], GRN, marker="ahg")}
+      {lbl(SX+26, 656, "yes", GRN, size=13, anchor="start")}
       {box(SX-130, 670, 260, 52, "#dcfce7", GRN, "Retrofit  (absorbing)",
-           "household leaves the risk pool permanently", INK, fs=14)}
+           "household leaves the risk pool permanently", tcol=INK, fs=14)}
 
       <!-- outputs note to the right of retrofit -->
-      {path([(SX+130,696),(620,696)], MUT)}
+      {path([(SX+132,696),(618,696)], MUT)}
       {box(620, 670, 200, 52, "#eef2f7", "#cbd5e1", "Model outputs",
-           "adoption curve, survey comparison", INK, fs=12.5)}
+           "adoption curve, survey comparison", tcol=INK, fs=12.5)}
     </svg>'''
     return svg
 
@@ -1788,6 +1789,21 @@ def _page_home():
             "parameters in <b>Settings</b>, press <b>Run Simulation</b>, and "
             "view the six result figures under <b>Results</b>. Full methodology "
             "and references are in <b>Documentation</b>.</div>",
+            unsafe_allow_html=True)
+
+        # Hand-drawn style arrow pointing to the left navigation rail.
+        # Embedded as a data-URI <img> (Streamlit's markdown strips inline <svg>).
+        arrow_svg = (
+            "<svg viewBox='0 0 230 140' xmlns='http://www.w3.org/2000/svg'>"
+            "<path d='M212,24 C150,8 70,20 44,80' fill='none' stroke='#ef4444' "
+            "stroke-width='8' stroke-linecap='round'/>"
+            "<path d='M44,80 L82,60 M44,80 L66,112' fill='none' stroke='#ef4444' "
+            "stroke-width='8' stroke-linecap='round' stroke-linejoin='round'/>"
+            "</svg>")
+        a64 = base64.b64encode(arrow_svg.encode("utf-8")).decode("ascii")
+        st.markdown(
+            f"<img src='data:image/svg+xml;base64,{a64}' "
+            "style='width:190px;height:auto;margin:0.4rem 0 0 0;'/>",
             unsafe_allow_html=True)
 
     with right:
