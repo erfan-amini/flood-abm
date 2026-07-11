@@ -581,6 +581,11 @@ def _inject_css():
       .rail-brand {{ display:flex; flex-direction:column; align-items:flex-start;
           padding: 0 0.35rem 0.8rem 0.35rem; margin: 0 0 0.6rem 0;
           border-bottom: 1px solid rgba(148,163,184,0.22); }}
+      /* logo image at top of the rail */
+      section[data-testid="stSidebar"] [data-testid="stImage"] {{
+          margin: 0.2rem 0 0.6rem 0; }}
+      section[data-testid="stSidebar"] [data-testid="stImage"] img {{
+          border-radius: 8px; }}
       .rail-word {{ font-size: 1.5rem; font-weight: 800; letter-spacing: 0.4px;
           color: #38bdf8; line-height: 1.05; }}
       .rail-sub  {{ font-size: 0.62rem; color: {CLR_SLATE300}; font-weight: 500;
@@ -588,14 +593,26 @@ def _inject_css():
       /* nav radio -> pill list */
       section[data-testid="stSidebar"] [role="radiogroup"] {{ gap: 5px; }}
       section[data-testid="stSidebar"] [role="radiogroup"] > label {{
-          display:flex; align-items:center; padding: 0.6rem 0.8rem; margin:0; width:100%;
+          display:flex; align-items:center; gap:0; padding: 0.6rem 0.85rem; margin:0; width:100%;
           border-radius: 10px; cursor:pointer; background: transparent;
           transition: background-color .2s ease, transform .2s ease, box-shadow .2s ease; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-of-type,
-      section[data-testid="stSidebar"] [role="radiogroup"] > label input[type="radio"] {{ display:none !important; }}
+      /* Hide ONLY the native radio input and its circular ring wrapper.
+         The ring is a div that directly contains the <input>; we target it
+         via :has() and also hide the input itself. We deliberately do NOT
+         hide div:first-of-type, because on this Streamlit build the first
+         div holds the LABEL TEXT. */
+      section[data-testid="stSidebar"] [role="radiogroup"] input[type="radio"] {{ display:none !important; }}
+      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:has(> input[type="radio"]) {{
+          display:none !important; }}
+      /* Force the label text visible and white. */
       section[data-testid="stSidebar"] [role="radiogroup"] > label,
-      section[data-testid="stSidebar"] [role="radiogroup"] > label * {{
-          color:#fff !important; font-weight:600; font-size:0.95rem; }}
+      section[data-testid="stSidebar"] [role="radiogroup"] > label div,
+      section[data-testid="stSidebar"] [role="radiogroup"] > label p,
+      section[data-testid="stSidebar"] [role="radiogroup"] > label span {{
+          color:#fff !important; font-weight:600; font-size:0.95rem;
+          visibility:visible !important; opacity:1 !important; }}
+      section[data-testid="stSidebar"] [role="radiogroup"] > label [data-testid="stMarkdownContainer"] {{
+          display:block !important; }}
       section[data-testid="stSidebar"] [role="radiogroup"] > label:hover {{
           background: rgba(148,163,184,0.16); transform: translateX(3px); }}
       section[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) {{
@@ -731,13 +748,34 @@ def _run_with_progress(params, progress_slot):
 # PAGE RENDERERS
 # ---------------------------------------------------------------------------
 
+def _sec(title, subtitle, color):
+    import streamlit as st
+    st.markdown(
+        f"<div style='background:linear-gradient(135deg,{color}14,{color}05);"
+        f"border-left:5px solid {color};border-radius:8px;padding:0.55rem 0.9rem;"
+        f"margin:0.4rem 0 0.9rem 0;'>"
+        f"<div style='font-size:1.05rem;font-weight:800;color:{CLR_INK};'>{title}</div>"
+        f"<div style='font-size:0.82rem;color:{CLR_MUTED};'>{subtitle}</div></div>",
+        unsafe_allow_html=True)
+
+
 def _page_settings():
     import streamlit as st
     D = DEFAULTS
+    # section accent colors
+    C_BELIEF = "#0284c7"   # sky
+    C_CH1    = "#0ea5e9"   # flood - sky
+    C_CH2    = "#22c55e"   # proximity - green
+    C_CH3    = "#f97316"   # information - orange
+    C_PMT    = "#7c3aed"   # threshold - violet
+    C_MINOR  = "#64748b"   # structural - slate
+
     st.markdown("## \u2699\ufe0f Settings")
-    st.markdown('<div class="tab-desc">All model parameters. Every value is a '
-                'direct entry box; survey-anchored defaults are shown in each '
-                'field\u2019s help tooltip. Set values here, then press '
+    st.markdown('<div class="tab-desc">Model parameters, grouped by role. The '
+                'primary drivers \u2014 belief, the three evidence channels, and the '
+                'decision threshold \u2014 come first; structural and environment '
+                'settings are grouped at the bottom. Survey-anchored defaults '
+                'appear in each field\u2019s tooltip. Set values, then press '
                 '<b>Run Simulation</b> in the left rail.</div>',
                 unsafe_allow_html=True)
 
@@ -750,74 +788,107 @@ def _page_settings():
         st.number_input(label, value=int(D[key]), min_value=int(minv),
                         max_value=int(maxv), step=int(step), key=f"p_{key}", help=help)
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("#### General")
-        ni("Time Steps", "TIME_STEPS", 10, 10000, 10)
-        ni("Number of Agents", "N_AGENTS", 10, 100000, 10)
-        ni("Random Seed", "RANDOM_SEED", 0, 10_000_000, 1)
-        st.markdown("#### Belief")
+    # ===================== PRIMARY DRIVERS =====================
+    st.markdown("### \U0001F3AF Core decision drivers")
+
+    _sec("Belief & Decision Threshold",
+         "Prior belief that a home should be retrofitted, and the PMT bar it must clear.",
+         C_BELIEF)
+    b1, b2 = st.columns(2)
+    with b1:
         nb("Initial Belief  \u2014  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
            help="Prior probability that a household should retrofit.")
-        st.markdown("#### PMT Threshold")
-        nb("Threshold Mean", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 0.99)
+        nb("PMT Threshold Mean  (\u03b8)", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 0.99,
+           help="Belief level at which a household acts (Rogers, 1975).")
+    with b2:
         st.checkbox("Threshold Heterogeneity", value=D["ENABLE_THRESHOLD_HET"],
                     key="p_ENABLE_THRESHOLD_HET",
                     help="Draw individual thresholds from a clipped Normal.")
-        nb("Std Dev", "PMT_THRESHOLD_STD", 0.01, "%.2f", 0.0, 0.5)
-        nb("Lower Bound", "PMT_THRESHOLD_LOW", 0.01, "%.2f", 0.01, 0.99)
-        nb("Upper Bound", "PMT_THRESHOLD_HIGH", 0.01, "%.2f", 0.01, 0.99)
-    with c2:
-        st.markdown("#### Channel 1 \u2014 Flood Experience")
+        cc1, cc2, cc3 = st.columns(3)
+        with cc1: nb("Std Dev", "PMT_THRESHOLD_STD", 0.01, "%.2f", 0.0, 0.5)
+        with cc2: nb("Lower", "PMT_THRESHOLD_LOW", 0.01, "%.2f", 0.01, 0.99)
+        with cc3: nb("Upper", "PMT_THRESHOLD_HIGH", 0.01, "%.2f", 0.01, 0.99)
+
+    ch1, ch2, ch3 = st.columns(3)
+    with ch1:
+        _sec("Channel 1 \u00b7 Flood Experience",
+             "Belief update per flood, amplified by perceived severity.", C_CH1)
         nb("\u03bb_flood  (base, per flood)", "LAMBDA_FLOOD", 0.01, "%.2f", 1.0, None,
            help="Bayes factor per flood. Survey anchor 1.52.")
-        nb("\u03bb_severity  (\u00d7 if expects rising damage)", "LAMBDA_SEVERITY",
-           0.1, "%.2f", 1.0, None,
-           help="Perceived-severity multiplier on a flood, for agents who expect "
+        nb("\u03bb_severity  (\u00d7 rising damage)", "LAMBDA_SEVERITY", 0.1, "%.2f", 1.0, None,
+           help="Perceived-severity multiplier on a flood, for agents expecting "
                 "rising flood damage. Survey anchor 2.40 (Rogers, 1975).")
         nb("Fraction expecting rising damage", "P_EXPECT_RISING_DAMAGE",
            0.01, "%.2f", 0.0, 1.0, help="Assigned once at t=0. Survey: 0.69.")
-        st.markdown("#### Channel 2 \u2014 Proximity")
-        nb("\u03bb_social  (base, per retrofitted neighbor)", "LAMBDA_SOCIAL",
-           0.01, "%.2f", 1.0, None, help="Bayes factor per newly-retrofitted neighbor.")
-        nb("\u03bb_similarity  (\u00d7 if neighbor is similar)", "LAMBDA_SIMILARITY",
-           0.1, "%.2f", 1.0, None,
-           help="Applied when the retrofitted neighbor is similar (Gower S \u2265 "
-                "threshold). 1.0 = no similarity effect.")
-        nb("Similarity threshold  (S \u2265)", "SIM_THRESHOLD", 0.05, "%.2f", 0.0, 1.0)
-        st.markdown("#### Channel 3 \u2014 Information")
-        nb("\u03bb_info  (base, if trusted information)", "LAMBDA_INFO",
-           0.01, "%.2f", 1.0, None,
+    with ch2:
+        _sec("Channel 2 \u00b7 Proximity",
+             "Social learning from retrofitted neighbours, stronger if similar.", C_CH2)
+        nb("\u03bb_social  (base, per neighbor)", "LAMBDA_SOCIAL", 0.01, "%.2f", 1.0, None,
+           help="Bayes factor per newly-retrofitted connected neighbor (Granovetter, 1978).")
+        nb("\u03bb_similarity  (\u00d7 if similar)", "LAMBDA_SIMILARITY", 0.1, "%.2f", 1.0, None,
+           help="Applied when the retrofitted neighbor is similar "
+                "(Gower S \u2265 threshold). 1.0 = no similarity effect.")
+        nb("Similarity threshold  (S \u2265)", "SIM_THRESHOLD", 0.05, "%.2f", 0.0, 1.0,
+           help="A neighbor counts as similar at or above this Gower similarity.")
+    with ch3:
+        _sec("Channel 3 \u00b7 Information",
+             "One-time t=0 prior from trusted information and forecast use.", C_CH3)
+        nb("\u03bb_info  (base, if trusted info)", "LAMBDA_INFO", 0.01, "%.2f", 1.0, None,
            help="One-time t=0 factor for agents with a trusted source. "
                 "Survey: weak alone (OR ~1.39).")
-        nb("\u03bb_forecast  (\u00d7 if forecast-preparer)", "LAMBDA_FORECAST",
-           0.05, "%.2f", 1.0, None, help="Forecast-preparer amplifier. Survey ~3.2.")
+        nb("\u03bb_forecast  (\u00d7 if forecast-prep)", "LAMBDA_FORECAST", 0.05, "%.2f", 1.0, None,
+           help="Forecast-preparer amplifier. Survey ~3.2.")
         nb("Fraction with trusted information", "P_TRUSTED_INFO", 0.01, "%.2f", 0.0, 1.0,
            help="Survey (never-flooded): 0.48.")
         nb("Fraction preparing on forecasts", "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
            help="Survey (never-flooded): 0.65.")
-    with c3:
-        st.markdown("#### Agent Attributes")
-        st.checkbox("Attribute Heterogeneity", value=D["ENABLE_HETEROGENEITY"],
-                    key="p_ENABLE_HETEROGENEITY",
-                    help="If off, all agents identical (S=1 for all pairs).")
-        ni("Attributes per Agent", "N_ATTRIBUTES", 1, 10)
-        ni("Classes per Attribute", "N_CLASSES", 1, 10)
-        st.markdown("#### Spatial & Network")
-        ni("Grid Rows", "GRID_ROWS", 1, 10)
-        ni("Grid Cols", "GRID_COLS", 1, 10)
-        ni("Connectors", "N_CONNECTORS", 0, 10)
-        nb("Elevation Slope", "SLOPE", 0.01, "%.2f", 0.01, 2.0)
-        nb("Elevation Noise", "NOISE_FACTOR", 0.01, "%.2f", 0.0, 1.0)
-        nb("Distance Threshold", "DISTANCE_THRESHOLD", 0.01, "%.2f", 0.01, 0.5)
-        ni("DBSCAN Min Samples", "DBSCAN_MIN_SAMPLES", 2, 10)
-        st.markdown("#### Flood (GEV)")
-        st.text_input("Return Periods",
-                      value=", ".join(str(x) for x in D["RETURN_PERIODS"]),
-                      key="p_RETURN_PERIODS")
-        st.text_input("Flood Levels",
-                      value=", ".join(str(x) for x in D["FLOOD_LEVELS"]),
-                      key="p_FLOOD_LEVELS")
+
+    # ===================== SECONDARY / STRUCTURAL =====================
+    st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
+    st.markdown("### \U0001F527 Environment & run settings")
+    st.caption("Population, geography, network, flood generator, and run controls. "
+               "These shape the setting rather than the decision mechanism; the "
+               "defaults are sensible for most experiments.")
+
+    with st.expander("Population, spatial layout & network", expanded=False):
+        s1, s2, s3 = st.columns(3)
+        with s1:
+            _sec("Population", "How many households, and how varied.", C_MINOR)
+            ni("Number of Agents", "N_AGENTS", 10, 100000, 10)
+            st.checkbox("Attribute Heterogeneity", value=D["ENABLE_HETEROGENEITY"],
+                        key="p_ENABLE_HETEROGENEITY",
+                        help="If off, all agents identical (S=1 for all pairs).")
+            ni("Attributes per Agent", "N_ATTRIBUTES", 1, 10)
+            ni("Classes per Attribute", "N_CLASSES", 1, 10)
+        with s2:
+            _sec("Spatial layout", "Neighbourhood grid and terrain.", C_MINOR)
+            ni("Grid Rows", "GRID_ROWS", 1, 10)
+            ni("Grid Cols", "GRID_COLS", 1, 10)
+            ni("Connectors", "N_CONNECTORS", 0, 10)
+            nb("Elevation Slope", "SLOPE", 0.01, "%.2f", 0.01, 2.0)
+            nb("Elevation Noise", "NOISE_FACTOR", 0.01, "%.2f", 0.0, 1.0)
+        with s3:
+            _sec("Network", "Who is connected, and cluster detection.", C_MINOR)
+            nb("Distance Threshold", "DISTANCE_THRESHOLD", 0.01, "%.2f", 0.01, 0.5,
+               help="Households within this distance are network neighbors.")
+            ni("DBSCAN Min Samples", "DBSCAN_MIN_SAMPLES", 2, 10)
+
+    with st.expander("Flood generator & run controls", expanded=False):
+        f1, f2 = st.columns(2)
+        with f1:
+            _sec("Flood (GEV)", "Extreme-value flood sampler inputs.", C_MINOR)
+            st.text_input("Return Periods",
+                          value=", ".join(str(x) for x in D["RETURN_PERIODS"]),
+                          key="p_RETURN_PERIODS",
+                          help="Comma-separated return periods (years).")
+            st.text_input("Flood Levels",
+                          value=", ".join(str(x) for x in D["FLOOD_LEVELS"]),
+                          key="p_FLOOD_LEVELS",
+                          help="Comma-separated flood levels matching the return periods.")
+        with f2:
+            _sec("Run controls", "Length and reproducibility of the simulation.", C_MINOR)
+            ni("Time Steps", "TIME_STEPS", 10, 10000, 10)
+            ni("Random Seed", "RANDOM_SEED", 0, 10_000_000, 1)
 
 
 def _config_chips(p):
@@ -1100,10 +1171,22 @@ def _run_app():
 
     # ---- navigation rail ----
     with st.sidebar:
-        st.markdown('<div class="rail-brand"><span class="rail-word">'
-                    '\U0001F30A Flood ABM</span><span class="rail-sub">'
-                    'Bayesian Belief Updating &middot; v13</span></div>',
-                    unsafe_allow_html=True)
+        # Logo at the very top of the rail (as in the ADAPT tool). Falls back
+        # to a text brand block if logo.png is not present in the app folder.
+        import os as _os
+        if _os.path.exists("logo.png"):
+            try:
+                st.image("logo.png", width="stretch")
+            except TypeError:
+                st.image("logo.png", use_container_width=True)
+            st.markdown('<div class="rail-brand" style="border-top:0;padding-top:0;">'
+                        '<span class="rail-sub">Bayesian Belief Updating &middot; v13'
+                        '</span></div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="rail-brand"><span class="rail-word">'
+                        '\U0001F30A Flood ABM</span><span class="rail-sub">'
+                        'Bayesian Belief Updating &middot; v13</span></div>',
+                        unsafe_allow_html=True)
 
         nav = st.radio("Navigation",
                        ["\U0001F4D8  Documentation", "\u2699\ufe0f  Settings",
