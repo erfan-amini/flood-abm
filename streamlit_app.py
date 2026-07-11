@@ -203,6 +203,21 @@ class FloodGenerator:
         return float(np.clip(v, 0.0, 1.0))
 
 
+class _FixedFloodSeries:
+    """Replays a user-supplied flood series (Case Study Mode); 0 past the end."""
+
+    def __init__(self, levels):
+        self._levels = list(levels)
+        self._i = 0
+
+    def sample(self):
+        if self._i < len(self._levels):
+            v = self._levels[self._i]
+            self._i += 1
+            return float(np.clip(v, 0.0, 1.0))
+        return 0.0
+
+
 # ============================================================================
 # SPATIAL LAYOUT  (grid neighborhoods with optional connectors)
 # ============================================================================
@@ -456,14 +471,28 @@ class FloodAdaptationModel(mesa.Model):
         self._init_components()
 
     def _init_components(self):
-        self.flood_generator = FloodGenerator(
-            self.RETURN_PERIODS, self.FLOOD_LEVELS, self.rng)
+        # Optional custom flood series (Case Study Mode): replaces the GEV
+        # sampler with a fixed, user-supplied sequence of flood levels.
+        custom_flood = getattr(self, "CUSTOM_FLOOD_SERIES", None)
+        if custom_flood is not None and len(custom_flood) > 0:
+            self.flood_generator = _FixedFloodSeries(custom_flood)
+        else:
+            self.flood_generator = FloodGenerator(
+                self.RETURN_PERIODS, self.FLOOD_LEVELS, self.rng)
 
-        self.positions, self.elevations = generate_spatial(
-            self.n_agents, self.DISTANCE_THRESHOLD, self.GRID_ROWS,
-            self.GRID_COLS, self.N_CONNECTORS, self.SLOPE,
-            self.NOISE_FACTOR, self.rng)
-        self.n_agents = len(self.positions)   # grid may adjust count
+        # Positions & elevations. Case Study Mode supplies them directly from an
+        # uploaded CSV (columns x, y, z); otherwise they are generated on a grid.
+        custom_pos = getattr(self, "CUSTOM_POSITIONS", None)
+        custom_elev = getattr(self, "CUSTOM_ELEVATIONS", None)
+        if custom_pos is not None and custom_elev is not None:
+            self.positions = np.asarray(custom_pos, dtype=float)
+            self.elevations = np.asarray(custom_elev, dtype=float)
+        else:
+            self.positions, self.elevations = generate_spatial(
+                self.n_agents, self.DISTANCE_THRESHOLD, self.GRID_ROWS,
+                self.GRID_COLS, self.N_CONNECTORS, self.SLOPE,
+                self.NOISE_FACTOR, self.rng)
+        self.n_agents = len(self.positions)   # grid or CSV sets the final count
 
         self.attributes = generate_attributes(
             self.n_agents, self.N_ATTRIBUTES, self.N_CLASSES,
@@ -565,8 +594,11 @@ def _inject_css():
     import streamlit as st
     st.markdown(f"""<style>
       .block-container {{ padding-top: 1.2rem; }}
-      h2 {{ font-size: 1.75rem !important; }}
-      h3 {{ font-size: 1.4rem !important; }}
+      h2 {{ font-size: 1.75rem !important; line-height: 1.35 !important;
+            padding-top: 0.15em !important; margin-top: 0 !important; }}
+      h3 {{ font-size: 1.4rem !important; line-height: 1.35 !important;
+            padding-top: 0.15em !important; }}
+      h2, h3 {{ overflow: visible !important; }}
       /* ---- dark navigation rail (sidebar) ---- */
       section[data-testid="stSidebar"] {{
           background: linear-gradient(180deg, {CLR_INK} 0%, {CLR_INK2} 100%) !important;
@@ -670,7 +702,7 @@ def _check_password():
                 'text-align:center;">\U0001F512 Flood Adaptation ABM</p>',
                 unsafe_allow_html=True)
     st.markdown(f'<p style="text-align:center;color:{CLR_MUTED};margin-bottom:2rem;">'
-                'Bayesian Belief Updating \u2014 Household Flood-Retrofit Model</p>',
+                'Flood Mitigation Agent-based Model</p>',
                 unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
@@ -1406,7 +1438,7 @@ def _page_documentation():
 def _run_app():
     import streamlit as st
 
-    st.set_page_config(page_title="Flood Adaptation ABM",
+    st.set_page_config(page_title="Flood Mitigation Agent-based Model",
                        page_icon="\U0001F30A", layout="wide",
                        initial_sidebar_state="expanded")
     _inject_css()
@@ -1417,11 +1449,19 @@ def _run_app():
     ss = st.session_state
     # Apply any pending navigation request BEFORE the radio widget is created.
     # (Streamlit forbids mutating a widget's own key after instantiation, so
+    # ---- navigation order: Settings, Run, Results, Documentation ----
+    NAV_SETTINGS = "\u2699\ufe0f  Settings"
+    NAV_RESULTS = "\U0001F4CA  Results"
+    NAV_DOC = "\U0001F4D8  Documentation"
+    NAV_ORDER = [NAV_SETTINGS, NAV_RESULTS, NAV_DOC]
+
     # the run handler sets ss["pending_nav"] and we consume it here instead.)
     if ss.get("pending_nav"):
         ss["nav"] = ss.pop("pending_nav")
-    if "nav" not in ss:
-        ss["nav"] = "\U0001F4CA  Results" if ss.get("has_run") else "\u2699\ufe0f  Settings"
+    if "nav" not in ss or ss["nav"] not in NAV_ORDER:
+        ss["nav"] = NAV_RESULTS if ss.get("has_run") else NAV_SETTINGS
+    if "mode" not in ss:
+        ss["mode"] = "Research"
 
     # ---- navigation rail ----
     with st.sidebar:
@@ -1434,18 +1474,39 @@ def _run_app():
             except TypeError:
                 st.image("logo.png", use_container_width=True)
             st.markdown('<div class="rail-brand" style="border-top:0;padding-top:0;">'
-                        '<span class="rail-sub">Bayesian Belief Updating &middot; v13'
+                        '<span class="rail-sub">Flood Mitigation Agent-based Model'
                         '</span></div>', unsafe_allow_html=True)
         else:
             st.markdown('<div class="rail-brand"><span class="rail-word">'
-                        '\U0001F30A Flood ABM</span><span class="rail-sub">'
-                        'Bayesian Belief Updating &middot; v13</span></div>',
+                        '\U0001F30A Flood Mitigation ABM</span><span class="rail-sub">'
+                        'Flood Mitigation Agent-based Model</span></div>',
                         unsafe_allow_html=True)
 
-        nav = st.radio("Navigation",
-                       ["\U0001F4D8  Documentation", "\u2699\ufe0f  Settings",
-                        "\U0001F4CA  Results"],
-                       key="nav", label_visibility="collapsed")
+        # ---- Mode selection (two buttons in one row; default Research) ----
+        st.markdown('<div class="rail-label">Mode</div>', unsafe_allow_html=True)
+        m1, m2 = st.columns(2)
+        if m1.button("Research", key="mode_research", use_container_width=True,
+                     type=("primary" if ss["mode"] == "Research" else "secondary")):
+            ss["mode"] = "Research"; st.rerun()
+        if m2.button("Case Study", key="mode_case", use_container_width=True,
+                     type=("primary" if ss["mode"] == "Case Study" else "secondary")):
+            ss["mode"] = "Case Study"; st.rerun()
+
+        # ---- Case Study uploads (only in Case Study Mode) ----
+        uploaded_csv = uploaded_flood = None
+        if ss["mode"] == "Case Study":
+            st.markdown('<div class="rail-label">Upload data</div>',
+                        unsafe_allow_html=True)
+            uploaded_csv = st.file_uploader("Location CSV (x, y, z)", type=["csv"],
+                                            key="csv_upl")
+            uploaded_flood = st.file_uploader("Flood series CSV (optional)",
+                                              type=["csv"], key="flood_upl",
+                                              help="Column 'flood_level', one value per step.")
+
+        st.markdown('<hr/>', unsafe_allow_html=True)
+
+        nav = st.radio("Navigation", NAV_ORDER, key="nav",
+                       label_visibility="collapsed")
 
         st.markdown('<hr/>', unsafe_allow_html=True)
         st.markdown('<div class="rail-label">Simulation</div>', unsafe_allow_html=True)
@@ -1455,7 +1516,32 @@ def _run_app():
     # ---- run action ----
     if run_clicked:
         params = _collect_params()
+        params["MODE"] = ss["mode"]
         try:
+            # Case Study Mode: load positions/elevations and optional flood series
+            if ss["mode"] == "Case Study":
+                if uploaded_csv is None:
+                    st.warning("Upload a location CSV (columns x, y, z) to run "
+                               "Case Study Mode.")
+                    st.stop()
+                uploaded_csv.seek(0)
+                cdf = pd.read_csv(uploaded_csv)
+                missing = {"x", "y", "z"} - set(cdf.columns)
+                if missing:
+                    st.error(f"Location CSV is missing column(s): "
+                             f"{', '.join(sorted(missing))}.")
+                    st.stop()
+                params["CUSTOM_POSITIONS"] = cdf[["x", "y"]].to_numpy(float)
+                params["CUSTOM_ELEVATIONS"] = cdf["z"].to_numpy(float)
+                params["N_AGENTS"] = len(cdf)
+                if uploaded_flood is not None:
+                    uploaded_flood.seek(0)
+                    fdf = pd.read_csv(uploaded_flood)
+                    if "flood_level" not in fdf.columns:
+                        st.error("Flood series CSV needs a 'flood_level' column.")
+                        st.stop()
+                    params["CUSTOM_FLOOD_SERIES"] = fdf["flood_level"].to_numpy(float)
+
             model = _run_with_progress(params, progress_slot)
             ss["model_obj"] = model
             ss["model_df"] = model.get_model_dataframe()
@@ -1471,7 +1557,7 @@ def _run_app():
             ss["has_run"] = True
             # Request navigation to Results on the next run (applied before the
             # widget is created), never by mutating the widget key here.
-            ss["pending_nav"] = "\U0001F4CA  Results"
+            ss["pending_nav"] = NAV_RESULTS
             st.rerun()
         except Exception as e:
             import traceback
@@ -1479,9 +1565,9 @@ def _run_app():
             st.exception(e); st.code(traceback.format_exc())
 
     # ---- page routing ----
-    if nav.strip().startswith("\U0001F4D8"):
+    if nav == NAV_DOC:
         _page_documentation()
-    elif nav.strip().startswith("\u2699"):
+    elif nav == NAV_SETTINGS:
         _page_settings()
     else:
         _page_results()
