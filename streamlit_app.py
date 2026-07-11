@@ -16,8 +16,8 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
 
   1. Personal flood experience
        base:       lambda_flood        (one factor per flood; Good, 1950)
-       multiplier: lambda_risk_expectation  active for agents who expect
-                   rising flood damage (risk-expectation appraisal, a
+       multiplier: lambda_risk_perception  active for agents who expect
+                   rising flood damage (risk-perception appraisal, a
                    forward-looking threat appraisal in the sense of
                    Rogers, 1975; Floyd, Prentice-Dunn & Rogers, 2000).
                    = 1 otherwise.
@@ -43,7 +43,7 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
 
 Survey-anchored defaults (NYC Flood Vulnerability Survey, cleaned):
   lambda_flood      1.52  (owner per-flood odds ratio)
-  lambda_risk_expectation  2.40  (expecting- vs not-expecting rising damage)
+  lambda_risk_perception  2.40  (expecting- vs not-expecting rising damage)
   lambda_forecast   3.20  (forecast-preparation odds ratio)
   P(expects rising damage) 0.69 ; P(trusted info) 0.48 ; P(forecast prep) 0.65
   Cumulative "at most k" retrofit targets: 18.0 / 22.3 / 27.4 %
@@ -99,10 +99,10 @@ DEFAULTS = dict(
     # at baseline, so they cannot all be defaults at once without saturating.
     INITIAL_BELIEF=0.08,
     # Channel 1 - experience.  Survey anchors: LAMBDA_FLOOD 1.52 (owner per-flood
-    # odds ratio), LAMBDA_RISK_EXPECTATION 2.40 (expecting vs not-expecting rising
+    # odds ratio), LAMBDA_RISK_PERCEPTION 2.40 (expecting vs not-expecting rising
     # damage).  Opened slightly de-escalated so the model is non-saturated out
     # of the box; tune upward toward the anchors and watch the cumulative bars.
-    LAMBDA_FLOOD=1.52, LAMBDA_RISK_EXPECTATION=1.60,
+    LAMBDA_FLOOD=1.52, LAMBDA_RISK_PERCEPTION=1.60,
     P_EXPECT_RISING_DAMAGE=0.69,
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
@@ -116,7 +116,10 @@ DEFAULTS = dict(
     LAMBDA_INFO=1.05, LAMBDA_FORECAST=1.15,
     P_TRUSTED_INFO=0.48, P_FORECAST_PREP=0.65,
     # PMT threshold
-    PMT_THRESHOLD_MEAN=0.85, PMT_THRESHOLD_STD=0.10,
+    # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
+    # from Uniform(LOW, HIGH); when OFF, every household uses MEAN (a single
+    # point value).
+    PMT_THRESHOLD_MEAN=0.85,
     PMT_THRESHOLD_LOW=0.75, PMT_THRESHOLD_HIGH=0.95,
     ENABLE_THRESHOLD_HET=True,
     # Flood (GEV)
@@ -388,8 +391,8 @@ class HouseholdAgent(mesa.Agent):
     def experience_flood(self, flood_level):
         """
         Fires only in a flood year (flood_level > z). Base per-flood factor
-        lambda_flood, times the risk-expectation multiplier
-        lambda_risk_expectation for agents who expect rising flood damage
+        lambda_flood, times the risk-perception multiplier
+        lambda_risk_perception for agents who expect rising flood damage
         (= 1 otherwise).
         """
         if self.is_retrofitted:
@@ -397,7 +400,7 @@ class HouseholdAgent(mesa.Agent):
         if flood_level > self.z:
             self.flood_count += 1
             m = self.model
-            mult = m.LAMBDA_RISK_EXPECTATION if self.expects_rising_damage else 1.0
+            mult = m.LAMBDA_RISK_PERCEPTION if self.expects_rising_damage else 1.0
             self.belief = bayesian_update(self.belief, m.LAMBDA_FLOOD * mult)
             return True
         return False
@@ -515,10 +518,10 @@ class FloodAdaptationModel(mesa.Model):
 
         self.agents_by_node = {}
         for i in range(self.n_agents):
-            if self.ENABLE_THRESHOLD_HET and self.PMT_THRESHOLD_STD > 0:
-                thr = float(np.clip(
-                    self.rng.normal(self.PMT_THRESHOLD_MEAN, self.PMT_THRESHOLD_STD),
-                    self.PMT_THRESHOLD_LOW, self.PMT_THRESHOLD_HIGH))
+            if self.ENABLE_THRESHOLD_HET and self.PMT_THRESHOLD_HIGH > self.PMT_THRESHOLD_LOW:
+                # Heterogeneous thresholds ~ Uniform(low, high).
+                thr = float(self.rng.uniform(self.PMT_THRESHOLD_LOW,
+                                             self.PMT_THRESHOLD_HIGH))
             else:
                 thr = self.PMT_THRESHOLD_MEAN
             agent = HouseholdAgent(
@@ -756,7 +759,7 @@ def _collect_params():
         DBSCAN_MIN_SAMPLES=int(g("DBSCAN_MIN_SAMPLES", D["DBSCAN_MIN_SAMPLES"])),
         INITIAL_BELIEF=g("INITIAL_BELIEF", D["INITIAL_BELIEF"]),
         LAMBDA_FLOOD=g("LAMBDA_FLOOD", D["LAMBDA_FLOOD"]),
-        LAMBDA_RISK_EXPECTATION=g("LAMBDA_RISK_EXPECTATION", D["LAMBDA_RISK_EXPECTATION"]),
+        LAMBDA_RISK_PERCEPTION=g("LAMBDA_RISK_PERCEPTION", D["LAMBDA_RISK_PERCEPTION"]),
         P_EXPECT_RISING_DAMAGE=g("P_EXPECT_RISING_DAMAGE", D["P_EXPECT_RISING_DAMAGE"]),
         LAMBDA_SOCIAL=g("LAMBDA_SOCIAL", D["LAMBDA_SOCIAL"]),
         LAMBDA_SIMILARITY=g("LAMBDA_SIMILARITY", D["LAMBDA_SIMILARITY"]),
@@ -766,7 +769,6 @@ def _collect_params():
         P_TRUSTED_INFO=g("P_TRUSTED_INFO", D["P_TRUSTED_INFO"]),
         P_FORECAST_PREP=g("P_FORECAST_PREP", D["P_FORECAST_PREP"]),
         PMT_THRESHOLD_MEAN=g("PMT_THRESHOLD_MEAN", D["PMT_THRESHOLD_MEAN"]),
-        PMT_THRESHOLD_STD=g("PMT_THRESHOLD_STD", D["PMT_THRESHOLD_STD"]),
         PMT_THRESHOLD_LOW=g("PMT_THRESHOLD_LOW", D["PMT_THRESHOLD_LOW"]),
         PMT_THRESHOLD_HIGH=g("PMT_THRESHOLD_HIGH", D["PMT_THRESHOLD_HIGH"]),
         ENABLE_THRESHOLD_HET=g("ENABLE_THRESHOLD_HET", D["ENABLE_THRESHOLD_HET"]),
@@ -845,24 +847,28 @@ def _page_settings():
     _sec("Belief & Decision Threshold",
          "Prior belief that a home should be retrofitted, and the PMT bar it must clear.",
          C_BELIEF)
-    st.checkbox("Threshold Heterogeneity  (draw individual \u03b8 from a clipped Normal)",
-                value=D["ENABLE_THRESHOLD_HET"], key="p_ENABLE_THRESHOLD_HET")
-    bc1, bc2, bc3, bc4, bc5 = st.columns(5)
-    with bc1:
-        nb("Initial Belief  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
-           help="Prior probability that a household should retrofit.")
-    with bc2:
-        nb("Threshold Mean  \u03b8", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 0.99,
-           help="Belief level at which a household acts [14].")
-    with bc3:
-        nb("\u03b8 Std Dev", "PMT_THRESHOLD_STD", 0.01, "%.2f", 0.0, 0.5,
-           help="Spread of individual thresholds (if heterogeneity is on).")
-    with bc4:
-        nb("\u03b8 Lower", "PMT_THRESHOLD_LOW", 0.01, "%.2f", 0.01, 0.99,
-           help="Lower clip bound for individual thresholds.")
-    with bc5:
-        nb("\u03b8 Upper", "PMT_THRESHOLD_HIGH", 0.01, "%.2f", 0.01, 0.99,
-           help="Upper clip bound for individual thresholds.")
+    het_on = st.checkbox(
+        "Threshold Heterogeneity  (draw individual \u03b8 from Uniform[min, max])",
+        value=D["ENABLE_THRESHOLD_HET"], key="p_ENABLE_THRESHOLD_HET")
+    if het_on:
+        bc1, bc2, bc3 = st.columns(3)
+        with bc1:
+            nb("Initial Belief  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
+               help="Prior probability that a household should retrofit.")
+        with bc2:
+            nb("\u03b8 Minimum", "PMT_THRESHOLD_LOW", 0.01, "%.2f", 0.01, 0.99,
+               help="Lower bound of the uniform threshold distribution.")
+        with bc3:
+            nb("\u03b8 Maximum", "PMT_THRESHOLD_HIGH", 0.01, "%.2f", 0.01, 0.99,
+               help="Upper bound of the uniform threshold distribution.")
+    else:
+        bc1, bc2 = st.columns(2)
+        with bc1:
+            nb("Initial Belief  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
+               help="Prior probability that a household should retrofit.")
+        with bc2:
+            nb("Decision Threshold  \u03b8", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 0.99,
+               help="Single belief level at which every household acts [14].")
 
     ch1, ch2, ch3 = st.columns(3)
     with ch1:
@@ -870,8 +876,8 @@ def _page_settings():
              "Belief update per flood, amplified by expecting rising risk.", C_CH1)
         nb("\u03bb_flood  (base, per flood)", "LAMBDA_FLOOD", 0.01, "%.2f", 1.0, None,
            help="Bayes factor per flood. Survey anchor 1.52.")
-        nb("\u03bb_risk_expectation  (\u00d7 rising damage)", "LAMBDA_RISK_EXPECTATION", 0.1, "%.2f", 1.0, None,
-           help="Risk-expectation multiplier on a flood, for agents expecting "
+        nb("\u03bb_risk_perception  (\u00d7 rising damage)", "LAMBDA_RISK_PERCEPTION", 0.1, "%.2f", 1.0, None,
+           help="Risk-perception multiplier on a flood, for agents expecting "
                 "rising flood damage. Survey anchor 2.40 [14].")
         nb("Fraction expecting rising damage", "P_EXPECT_RISING_DAMAGE",
            0.01, "%.2f", 0.0, 1.0, help="Assigned once at t=0. Survey: 0.69.")
@@ -887,15 +893,15 @@ def _page_settings():
            help="A neighbor counts as similar at or above this Gower similarity.")
     with ch3:
         _sec("Channel 3 \u00b7 Information",
-             "One-time t=0 prior from trusted information and forecast use.", C_CH3)
+             "One-time t=0 prior from trusted information and forecast info.", C_CH3)
         nb("\u03bb_info  (base, if trusted info)", "LAMBDA_INFO", 0.01, "%.2f", 1.0, None,
            help="One-time t=0 factor for agents with a trusted source. "
                 "Survey: weak alone (OR ~1.39).")
-        nb("\u03bb_forecast  (\u00d7 if forecast-prep)", "LAMBDA_FORECAST", 0.05, "%.2f", 1.0, None,
-           help="Forecast-preparer amplifier. Survey ~3.2.")
+        nb("\u03bb_forecast  (\u00d7 if forecast info)", "LAMBDA_FORECAST", 0.05, "%.2f", 1.0, None,
+           help="Amplifier for agents who use flood-forecast information. Survey ~3.2.")
         nb("Fraction with trusted information", "P_TRUSTED_INFO", 0.01, "%.2f", 0.0, 1.0,
            help="Survey (never-flooded): 0.48.")
-        nb("Fraction preparing on forecasts", "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
+        nb("Fraction using forecast info", "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
            help="Survey (never-flooded): 0.65.")
 
     # ===================== SECONDARY / STRUCTURAL =====================
@@ -1110,7 +1116,7 @@ def _config_chips(p):
         ("Agents", p["N_AGENTS"]), ("Steps", p["TIME_STEPS"]),
         ("P(H\u2081)", f"{p['INITIAL_BELIEF']:.2f}"),
         ("\u03b8", f"{p['PMT_THRESHOLD_MEAN']:.2f}"),
-        ("\u03bb_flood\u00d7\u03bb_riskexp", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_RISK_EXPECTATION']:.2f}"),
+        ("\u03bb_flood\u00d7\u03bb_riskperc", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_RISK_PERCEPTION']:.2f}"),
         ("\u03bb_social\u00d7\u03bb_sim", f"{p['LAMBDA_SOCIAL']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
         ("\u03bb_info\u00d7\u03bb_fc", f"{p['LAMBDA_INFO']:.2f}\u00d7{p['LAMBDA_FORECAST']:.2f}"),
         ("Seed", p["RANDOM_SEED"]),
@@ -1258,7 +1264,7 @@ def _page_documentation():
                 "a trusted information source ($\\lambda_{info}=1.05$) who also "
                 "prepares on forecasts ($\\lambda_{forecast}=1.15$) then "
                 "experiences two floods, and expects rising damage "
-                "($\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,exp}}=1.60$). The "
+                "($\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,perc}}=1.60$). The "
                 "information channel fires once at $t=0$ and each flood fires "
                 "when it occurs:")
     st.latex(r"O_{\text{final}} = 0.087 \times "
@@ -1287,18 +1293,18 @@ def _page_documentation():
         "asymmetric \u2014 flood years are psychologically salient while dry years "
         "are cognitively inert (availability heuristic [15]). "
         "On a flood, the base per-flood factor $\\lambda_{flood}$ is "
-        "multiplied by a **risk-expectation** multiplier $\\lambda_{\\mathrm{risk\\,exp}}$ "
+        "multiplied by a **risk-perception** multiplier $\\lambda_{\\mathrm{risk\\,perc}}$ "
         "for households that expect flood damage to worsen [14], "
         "[4]:")
     st.latex(r"""\lambda_{\text{exp},i}^{(t)} =
 \begin{cases}
-\lambda_{flood}\cdot\lambda_{\mathrm{risk\,exp}} & f_t > z_i \ \text{and agent expects rising damage}\\
+\lambda_{flood}\cdot\lambda_{\mathrm{risk\,perc}} & f_t > z_i \ \text{and agent expects rising damage}\\
 \lambda_{flood} & f_t > z_i \ \text{and agent does not}\\
 1 & f_t \le z_i \quad(\text{not flooded; no update})
 \end{cases}""")
     st.markdown("A single per-flood factor is used (no separate first-flood "
                 "term). Survey anchors: $\\lambda_{flood}=1.52$ (owner per-flood "
-                "odds ratio) and $\\lambda_{\\mathrm{risk\\,exp}}=2.40$ (expecting- vs "
+                "odds ratio) and $\\lambda_{\\mathrm{risk\\,perc}}=2.40$ (expecting- vs "
                 "not-expecting rising damage). Because each flood contributes "
                 "only a modest factor, an agent must experience several floods "
                 "before belief nears the threshold \u2014 consistent with observed "
@@ -1374,16 +1380,16 @@ def _page_documentation():
                 unsafe_allow_html=True)
     st.markdown(
         "A household retrofits at the first step its belief reaches its "
-        "threshold, $P_i(H_1)\\ge\\theta_i$ [14]. Thresholds are "
-        "heterogeneous, drawn from a Normal distribution clipped to a user-set "
-        "band $[\\theta_{low},\\theta_{high}]$; belief is homogeneous at $t=0$. "
-        "Because only the gap between belief and threshold governs behaviour, a "
-        "single heterogeneous quantity (the threshold) is sufficient and "
-        "identifiable \u2014 belief and threshold spreads are not separately "
-        "estimated.")
+        "threshold, $P_i(H_1)\\ge\\theta_i$ [14]. When threshold heterogeneity "
+        "is enabled, individual thresholds are drawn from a **uniform "
+        "distribution** on a user-set band $[\\theta_{min},\\theta_{max}]$; "
+        "otherwise every household shares a single threshold. Belief is "
+        "homogeneous at $t=0$. Because only the gap between belief and threshold "
+        "governs behaviour, a single heterogeneous quantity (the threshold) is "
+        "sufficient and identifiable \u2014 belief and threshold spreads are not "
+        "separately estimated.")
     st.latex(r"\text{retrofit}_i \iff P_i(H_1)\ge\theta_i,\qquad "
-             r"\theta_i\sim\mathcal{N}(\mu_\theta,\sigma_\theta)\ \text{clipped to}\ "
-             r"[\theta_{low},\theta_{high}]")
+             r"\theta_i\sim\mathcal{U}(\theta_{min},\theta_{max})")
 
     # ---- 6 Understanding the Bayes factors ----
     st.markdown('<div class="doc-h">6 &nbsp; Understanding the Bayes factors</div>',
@@ -1392,7 +1398,7 @@ def _page_documentation():
         "A Bayes factor greater than 1 is evidence for retrofitting and "
         "multiplies the odds. Two floods contribute $\\lambda_{flood}^2$; a "
         "flood experienced by a household expecting rising damage contributes "
-        "$\\lambda_{flood}\\,\\lambda_{\\mathrm{risk\\,exp}}$. Working in odds means these "
+        "$\\lambda_{flood}\\,\\lambda_{\\mathrm{risk\\,perc}}$. Working in odds means these "
         "combine by multiplication and the update is order-independent \u2014 the "
         "same evidence yields the same belief regardless of the order in which "
         "it arrives [5].")
@@ -1419,7 +1425,7 @@ def _page_documentation():
         "All parameters live on the **Settings** page, grouped into core "
         "decision drivers (belief, the three channels, the threshold) and "
         "structural environment settings. Survey-anchored starting values: "
-        "$\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,exp}}=2.40$, "
+        "$\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,perc}}=2.40$, "
         "$\\lambda_{forecast}\\approx3.2$; trait fractions 0.69 / 0.48 / 0.65. "
         "The opening defaults are deliberately de-escalated from these raw "
         "point estimates so the model is non-saturated out of the box: each "
@@ -1473,8 +1479,8 @@ def _page_documentation():
         "zero floods to 27% among the most-flooded), while never-flooded "
         "households retrofit at low rates \u2014 evidence against social contagion "
         "as the primary mechanism.\n"
-        "- **Risk expectation matters.** Households expecting rising flood "
-        "damage retrofit more, motivating the $\\lambda_{\\mathrm{risk\\,exp}}$ multiplier "
+        "- **Risk perception matters.** Households expecting rising flood "
+        "damage retrofit more, motivating the $\\lambda_{\\mathrm{risk\\,perc}}$ multiplier "
         "on the experience channel.\n"
         "- **Trusted information and forecast preparation raise adoption.** "
         "Households with a trusted information source (35% vs 21%) and those "
@@ -1587,108 +1593,134 @@ def _page_documentation():
 # ---------------------------------------------------------------------------
 
 def _workflow_svg():
-    """Professional SVG flowchart of the model workflow (ADAPT palette)."""
-    C1, C2, C3 = "#0ea5e9", "#22c55e", "#f97316"   # three channels
-    SKY, SKYD, INK, MUT = "#0ea5e9", "#0284c7", "#0f172a", "#64748b"
-    GRN, RED, SLATE = "#22c55e", "#ef4444", "#e2e8f0"
+    """Professional SVG flowchart of the model workflow (ADAPT palette).
 
-    def box(x, y, w, h, fill, stroke, title, sub, tcol="#ffffff", rx=12):
+    Layout (960x680):
+      setup -> assign traits/prior  (top, centered)
+      flood draw (center) feeds Channel 1 & Channel 2; Channel 3 fires once
+      at t=0 from the prior. All three channels converge on 'update belief'.
+      belief -> decision diamond -> yes: retrofit ; no: routed loop back to
+      the flood draw. Every arrow terminates on a real node edge.
+    """
+    C1, C2, C3 = "#0ea5e9", "#22c55e", "#f97316"   # ch1 sky, ch2 green, ch3 orange
+    SKY, INK, MUT = "#0ea5e9", "#0f172a", "#64748b"
+    GRN = "#22c55e"
+
+    def box(x, y, w, h, fill, stroke, title, sub="", tcol="#ffffff", rx=12, fs=14.5):
+        cx = x + w / 2
         s = (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{rx}" '
              f'fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
-        s += (f'<text x="{x+w/2}" y="{y+(h/2 if not sub else h/2-8)}" '
-              f'text-anchor="middle" dominant-baseline="middle" '
-              f'font-size="15" font-weight="700" fill="{tcol}">{title}</text>')
+        ty = y + (h / 2 if not sub else h / 2 - 8)
+        s += (f'<text x="{cx}" y="{ty}" text-anchor="middle" '
+              f'dominant-baseline="middle" font-size="{fs}" font-weight="700" '
+              f'fill="{tcol}">{title}</text>')
         if sub:
-            s += (f'<text x="{x+w/2}" y="{y+h/2+12}" text-anchor="middle" '
-                  f'dominant-baseline="middle" font-size="11.5" '
-                  f'fill="{tcol}" opacity="0.9">{sub}</text>')
+            s += (f'<text x="{cx}" y="{y+h/2+11}" text-anchor="middle" '
+                  f'dominant-baseline="middle" font-size="11" '
+                  f'fill="{tcol}" opacity="0.92">{sub}</text>')
         return s
 
-    def arrow(x1, y1, x2, y2, color=MUT, dash=""):
+    def vline(x, y1, y2, color=MUT, dash=""):
         d = f'stroke-dasharray="{dash}"' if dash else ""
-        return (f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color}" '
+        return (f'<line x1="{x}" y1="{y1}" x2="{x}" y2="{y2}" stroke="{color}" '
                 f'stroke-width="2" marker-end="url(#ah)" {d}/>')
 
-    svg = f'''<svg viewBox="0 0 940 620" xmlns="http://www.w3.org/2000/svg"
+    def path(pts, color=MUT, dash=""):
+        d = f'stroke-dasharray="{dash}"' if dash else ""
+        pd = "M " + " L ".join(f"{px},{py}" for px, py in pts)
+        return (f'<path d="{pd}" fill="none" stroke="{color}" stroke-width="2" '
+                f'marker-end="url(#ah)" {d}/>')
+
+    def lbl(x, y, text, color=MUT, weight="700", size=11):
+        return (f'<text x="{x}" y="{y}" text-anchor="middle" font-size="{size}" '
+                f'font-weight="{weight}" fill="{color}">{text}</text>')
+
+    # column centers
+    L, Cx, R = 200, 480, 760      # channel 3 / flood-ch1 / channel 2 columns
+    svg = f'''<svg viewBox="0 0 960 680" xmlns="http://www.w3.org/2000/svg"
       font-family="'Source Sans Pro',system-ui,sans-serif">
       <defs>
-        <marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3"
+        <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3"
                 orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L8,3 L0,6 Z" fill="{MUT}"/>
+          <path d="M0,0 L7,3 L0,6 Z" fill="{MUT}"/>
+        </marker>
+        <marker id="ahg" markerWidth="9" markerHeight="9" refX="7" refY="3"
+                orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L7,3 L0,6 Z" fill="{GRN}"/>
         </marker>
         <linearGradient id="gInk" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="{INK}"/><stop offset="1" stop-color="#1e293b"/>
         </linearGradient>
       </defs>
 
-      <!-- Stage 1: setup -->
-      {box(360, 20, 220, 56, "url(#gInk)", INK,
-           "Initialise settlement", "households, elevation, network")}
-      {arrow(470, 76, 470, 108)}
+      <!-- 1. setup -->
+      {box(370, 20, 220, 52, "url(#gInk)", INK, "Initialise settlement",
+           "households, elevation, network")}
+      {vline(480, 72, 100)}
 
-      <!-- Stage 2: assign traits + prior -->
-      {box(330, 110, 280, 56, "#f1f5f9", "#cbd5e1",
-           "Assign static traits &amp; prior belief",
-           "expects-rising-damage, trusted-info, forecast-prep", INK)}
-      {arrow(470, 166, 470, 198)}
+      <!-- 2. assign traits + prior belief -->
+      {box(330, 102, 300, 52, "#f1f5f9", "#cbd5e1",
+           "Assign traits &amp; prior belief",
+           "risk perception, trusted info, forecast info", INK)}
 
-      <!-- Stage 3: information prior (Channel 3) fires once at t=0 -->
-      {box(340, 200, 260, 52, C3, "#c2610c",
-           "Channel 3 \u00b7 Information (t=0)", "one-time informational prior")}
-      {arrow(470, 252, 470, 284)}
+      <!-- from prior: split to Channel 3 (once) and into the step loop -->
+      <!-- down the middle into the loop -->
+      {path([(480,154),(480,214)])}
 
-      <!-- time-step loop label -->
-      <rect x="70" y="286" width="800" height="212" rx="16" fill="none"
+      <!-- STEP LOOP box -->
+      <rect x="60" y="224" width="840" height="300" rx="16" fill="none"
             stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6 5"/>
-      <text x="86" y="306" font-size="12.5" font-weight="700" fill="{MUT}"
+      <text x="78" y="246" font-size="12" font-weight="800" fill="{MUT}"
             letter-spacing="0.5">EACH TIME STEP (YEAR)</text>
 
-      <!-- flood draw -->
-      {box(360, 300, 220, 50, "#e0f2fe", SKY,
-           "Draw annual flood", "GEV sample fₜ", INK)}
-      {arrow(470, 350, 470, 378)}
+      <!-- flood draw (center top of loop) -->
+      {box(370, 250, 220, 48, "#e0f2fe", SKY, "Draw annual flood",
+           "GEV sample f\u209c", INK)}
 
-      <!-- two channels row -->
-      {box(150, 380, 250, 62, C1, "#0369a1",
-           "Channel 1 \u00b7 Flood experience",
-           "if flooded: \u03bb_flood \u00d7 \u03bb_risk_expectation")}
-      {box(540, 380, 250, 62, C2, "#15803d",
-           "Channel 2 \u00b7 Proximity",
-           "per retrofitted neighbour: \u03bb_social \u00d7 \u03bb_similarity")}
-      {arrow(470, 350, 275, 380)}
-      {arrow(470, 350, 665, 380)}
+      <!-- three channels, SAME LEVEL -->
+      {box(70, 340, 250, 66, C3, "#c2610c", "Channel 3 \u00b7 Information",
+           "\u03bb_info \u00d7 \u03bb_forecast (t=0 only)")}
+      {box(355, 340, 250, 66, C1, "#0369a1", "Channel 1 \u00b7 Flood experience",
+           "if flooded: \u03bb_flood \u00d7 \u03bb_risk_perc")}
+      {box(640, 340, 250, 66, C2, "#15803d", "Channel 2 \u00b7 Proximity",
+           "per retrofit neighbour: \u03bb_social \u00d7 \u03bb_sim")}
+
+      <!-- prior belief feeds Channel 3 once (dashed, labelled t=0) -->
+      {path([(330,128),(195,128),(195,340)], C3, dash="5 4")}
+      {lbl(230, 122, "once, t=0", C3, size=10)}
+
+      <!-- flood draw feeds Channel 1 (straight) and Channel 2 (routed) -->
+      {vline(480, 298, 340)}
+      {path([(590,274),(765,274),(765,340)])}
+
+      <!-- three channels converge on 'update belief' -->
+      {path([(195,406),(195,450),(410,450),(410,468)], C3)}
+      {vline(480, 406, 468, C1)}
+      {path([(765,406),(765,450),(550,450),(550,468)], C2)}
 
       <!-- update belief -->
-      {arrow(275, 442, 430, 470)}
-      {arrow(665, 442, 510, 470)}
-      {box(360, 462, 220, 46, "#f8fafc", "#cbd5e1",
-           "Update belief  P(H₁)", "odds \u00d7 Bayes factors", INK)}
+      {box(370, 470, 220, 44, "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)",
+           "odds \u00d7 Bayes factors", INK, fs=13.5)}
 
-      <!-- decision -->
-      {arrow(470, 508, 470, 536)}
-      <polygon points="470,536 590,566 470,596 350,566" fill="#fff7ed"
+      <!-- decision diamond (below the loop) -->
+      {vline(480, 514, 548)}
+      <polygon points="480,548 596,582 480,616 364,582" fill="#fff7ed"
                stroke="{C3}" stroke-width="1.5"/>
-      <text x="470" y="562" text-anchor="middle" font-size="13.5"
-            font-weight="700" fill="{INK}">P(H\u2081) \u2265 \u03b8 ?</text>
-      <text x="470" y="580" text-anchor="middle" font-size="11" fill="{MUT}">PMT threshold</text>
+      {lbl(480, 578, "P(H\u2081) \u2265 \u03b8 ?", INK, size=13)}
+      {lbl(480, 596, "PMT threshold", MUT, weight="500", size=10.5)}
 
       <!-- yes -> retrofit -->
-      {arrow(590, 566, 690, 566, GRN)}
-      {box(690, 540, 170, 52, "#dcfce7", GRN,
-           "Retrofit (absorbing)", "leaves risk pool", INK)}
-      <text x="640" y="558" text-anchor="middle" font-size="11"
-            font-weight="700" fill="{GRN}">yes</text>
+      <line x1="596" y1="582" x2="700" y2="582" stroke="{GRN}"
+            stroke-width="2" marker-end="url(#ahg)"/>
+      {lbl(648, 574, "yes", GRN, size=11)}
+      {box(700, 556, 180, 52, "#dcfce7", GRN, "Retrofit (absorbing)",
+           "leaves risk pool", INK)}
 
-      <!-- no -> next step (loop back) -->
-      {arrow(350, 566, 250, 566, MUT)}
-      <text x="300" y="558" text-anchor="middle" font-size="11"
-            font-weight="700" fill="{MUT}">no</text>
-      <text x="140" y="562" text-anchor="middle" font-size="11.5"
-            fill="{MUT}" font-style="italic">carry belief<tspan x="140" dy="14">to next year</tspan></text>
-
-      <!-- compare to survey -->
-      {arrow(775, 592, 775, 596)}
-      {box(690, 596, 170, 0, "none", "none", "", "")}
+      <!-- no -> loop back to flood draw (routed cleanly around the left) -->
+      {path([(364,582),(30,582),(30,274),(370,274)])}
+      {lbl(300, 574, "no", MUT, size=11)}
+      <text x="30" y="430" text-anchor="middle" font-size="10.5"
+            fill="{MUT}" font-style="italic" transform="rotate(-90 30 430)">carry belief to next year</text>
     </svg>'''
     return svg
 
