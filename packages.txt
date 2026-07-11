@@ -1,2 +1,0 @@
-fonts-liberation
-fonts-stix
