@@ -1593,38 +1593,51 @@ def _page_documentation():
 # ---------------------------------------------------------------------------
 
 def _workflow_svg():
-    """Vertical SVG flowchart of the model workflow (ADAPT palette).
+    """Comprehensive SVG flowchart of the model workflow (ADAPT palette).
 
-    Portrait layout (600x860) for the right column of the Home page:
-      Initialization -> Assign attributes & prior belief.
-      Channel 3 (Information, t=0) sits OUTSIDE the loop, to the right, and
-      adjusts the prior once. The 'each time step' loop then contains the
-      flood draw, Channel 1 and Channel 2, the belief update, and the PMT
-      decision; 'no' loops back to the flood draw, 'yes' leads to retrofit.
-      Every arrow terminates on a real node edge.
+    Landscape layout (860x780). Design invariants (do not change):
+      * Channels 1, 2, 3 sit on the SAME horizontal row.
+      * Channels 1 and 2 are INSIDE the dashed 'each time step' loop box;
+        Channel 3 is OUTSIDE it, to the RIGHT (it fires once at t=0).
+      * The loop-box right edge falls between Channel 2 and Channel 3.
+      * Every arrow terminates on a real node edge; all labels are legible.
     """
     C1, C2, C3 = "#0ea5e9", "#22c55e", "#f97316"   # ch1 sky, ch2 green, ch3 orange
     SKY, INK, MUT = "#0ea5e9", "#0f172a", "#64748b"
     GRN = "#22c55e"
 
-    def box(x, y, w, h, fill, stroke, title, sub="", tcol="#ffffff", rx=11, fs=14):
+    def box(x, y, w, h, fill, stroke, title, sub="", sub2="", tcol="#ffffff",
+            rx=11, fs=14):
         cx = x + w / 2
         s = (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{rx}" '
              f'fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
-        ty = y + (h / 2 if not sub else h / 2 - 8)
-        s += (f'<text x="{cx}" y="{ty}" text-anchor="middle" '
-              f'dominant-baseline="middle" font-size="{fs}" font-weight="700" '
-              f'fill="{tcol}">{title}</text>')
-        if sub:
+        if sub and sub2:
+            s += (f'<text x="{cx}" y="{y+h/2-13}" text-anchor="middle" '
+                  f'dominant-baseline="middle" font-size="{fs}" font-weight="700" '
+                  f'fill="{tcol}">{title}</text>')
+            s += (f'<text x="{cx}" y="{y+h/2+3}" text-anchor="middle" '
+                  f'dominant-baseline="middle" font-size="10.5" fill="{tcol}" '
+                  f'opacity="0.95">{sub}</text>')
+            s += (f'<text x="{cx}" y="{y+h/2+18}" text-anchor="middle" '
+                  f'dominant-baseline="middle" font-size="10" fill="{tcol}" '
+                  f'opacity="0.9" font-style="italic">{sub2}</text>')
+        elif sub:
+            s += (f'<text x="{cx}" y="{y+h/2-7}" text-anchor="middle" '
+                  f'dominant-baseline="middle" font-size="{fs}" font-weight="700" '
+                  f'fill="{tcol}">{title}</text>')
             s += (f'<text x="{cx}" y="{y+h/2+11}" text-anchor="middle" '
-                  f'dominant-baseline="middle" font-size="10.5" '
-                  f'fill="{tcol}" opacity="0.92">{sub}</text>')
+                  f'dominant-baseline="middle" font-size="10.5" fill="{tcol}" '
+                  f'opacity="0.95">{sub}</text>')
+        else:
+            s += (f'<text x="{cx}" y="{y+h/2}" text-anchor="middle" '
+                  f'dominant-baseline="middle" font-size="{fs}" font-weight="700" '
+                  f'fill="{tcol}">{title}</text>')
         return s
 
-    def vline(x, y1, y2, color=MUT, dash=""):
+    def vline(x, y1, y2, color=MUT, dash="", marker="ah"):
         d = f'stroke-dasharray="{dash}"' if dash else ""
         return (f'<line x1="{x}" y1="{y1}" x2="{x}" y2="{y2}" stroke="{color}" '
-                f'stroke-width="2" marker-end="url(#ah)" {d}/>')
+                f'stroke-width="2" marker-end="url(#{marker})" {d}/>')
 
     def path(pts, color=MUT, dash="", marker="ah"):
         d = f'stroke-dasharray="{dash}"' if dash else ""
@@ -1632,102 +1645,107 @@ def _workflow_svg():
         return (f'<path d="{pd}" fill="none" stroke="{color}" stroke-width="2" '
                 f'marker-end="url(#{marker})" {d}/>')
 
-    def lbl(x, y, text, color=MUT, weight="700", size=10.5, anchor="middle"):
+    def lbl(x, y, text, color=MUT, weight="700", size=11, anchor="middle", italic=False):
+        st = ' font-style="italic"' if italic else ''
         return (f'<text x="{x}" y="{y}" text-anchor="{anchor}" font-size="{size}" '
-                f'font-weight="{weight}" fill="{color}">{text}</text>')
+                f'font-weight="{weight}" fill="{color}"{st}>{text}</text>')
 
-    # main vertical spine at x=210; Channel 3 column at x=430
-    SX = 210            # spine center x
-    svg = f'''<svg viewBox="0 0 580 700" xmlns="http://www.w3.org/2000/svg"
+    SX = 300     # main spine center (setup, flood, belief, decision)
+    svg = f'''<svg viewBox="0 0 860 780" xmlns="http://www.w3.org/2000/svg"
       font-family="'Source Sans Pro',system-ui,sans-serif">
       <defs>
         <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3"
                 orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L7,3 L0,6 Z" fill="{MUT}"/>
-        </marker>
+          <path d="M0,0 L7,3 L0,6 Z" fill="{MUT}"/></marker>
         <marker id="ahg" markerWidth="9" markerHeight="9" refX="7" refY="3"
                 orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L7,3 L0,6 Z" fill="{GRN}"/>
-        </marker>
+          <path d="M0,0 L7,3 L0,6 Z" fill="{GRN}"/></marker>
         <marker id="aho" markerWidth="9" markerHeight="9" refX="7" refY="3"
                 orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L7,3 L0,6 Z" fill="{C3}"/>
-        </marker>
+          <path d="M0,0 L7,3 L0,6 Z" fill="{C3}"/></marker>
+        <marker id="ah1" markerWidth="9" markerHeight="9" refX="7" refY="3"
+                orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L7,3 L0,6 Z" fill="{C1}"/></marker>
+        <marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="3"
+                orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L7,3 L0,6 Z" fill="{C2}"/></marker>
         <linearGradient id="gInk" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="{INK}"/><stop offset="1" stop-color="#1e293b"/>
         </linearGradient>
       </defs>
 
       <!-- 1. initialization -->
-      {box(SX-120, 16, 240, 50, "url(#gInk)", INK, "Initialization",
-           "households, elevation, network")}
-      {vline(SX, 66, 94)}
+      {box(SX-130, 18, 260, 52, "url(#gInk)", INK, "Initialization",
+           "households, elevation, network, ties")}
+      {vline(SX, 70, 100)}
 
       <!-- 2. assign attributes + prior belief -->
-      {box(SX-140, 96, 280, 54, "#f1f5f9", "#cbd5e1",
+      {box(SX-150, 102, 300, 56, "#f1f5f9", "#cbd5e1",
            "Assign attributes &amp; prior belief",
            "risk perception, trusted info, forecast info", INK)}
+      {vline(SX, 158, 210)}
 
-      <!-- Channel 3 OUTSIDE the loop, on the right, one-time t=0 -->
-      {box(360, 96, 200, 66, C3, "#c2610c", "Channel 3 \u00b7 Information",
-           "\u03bb_info \u00d7 \u03bb_forecast", fs=13)}
-      <!-- prior belief <-> channel 3 : ch3 adjusts prior once -->
-      {path([(360,129),(SX+140,123)], C3, marker="aho")}
-      {lbl(350, 88, "once, at t=0", C3, size=9.5, anchor="end")}
+      <!-- ===== EACH TIME STEP loop box (right edge between Ch2 and Ch3) ===== -->
+      <rect x="40" y="220" width="530" height="410" rx="16" fill="none"
+            stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="7 5"/>
+      <text x="58" y="244" font-size="12" font-weight="800" fill="{MUT}"
+            letter-spacing="0.6">EACH TIME STEP (YEAR)</text>
 
-      {vline(SX, 150, 196)}
+      <!-- annual flood level -->
+      {box(SX-115, 256, 230, 48, "#e0f2fe", SKY, "Annual flood level",
+           "GEV sample f\u209c", INK, fs=14)}
 
-      <!-- ===== EACH TIME STEP loop box ===== -->
-      <rect x="40" y="206" width="404" height="392" rx="16" fill="none"
-            stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6 5"/>
-      <text x="56" y="228" font-size="11.5" font-weight="800" fill="{MUT}"
-            letter-spacing="0.5">EACH TIME STEP (YEAR)</text>
+      <!-- channel row: y = 356..432 ; Ch1 & Ch2 inside, Ch3 outside right -->
+      {box(70, 356, 180, 76, C1, "#0369a1", "Channel 1",
+           "Flood experience", "\u03bb_flood \u00d7 \u03bb_risk_perc", fs=14)}
+      {box(300, 356, 180, 76, C2, "#15803d", "Channel 2",
+           "Proximity", "\u03bb_social \u00d7 \u03bb_sim", fs=14)}
+      {box(620, 356, 190, 76, C3, "#c2610c", "Channel 3",
+           "Information (t=0)", "\u03bb_info \u00d7 \u03bb_forecast", fs=14)}
 
-      <!-- flood draw -->
-      {box(SX-110, 240, 220, 46, "#e0f2fe", SKY, "Draw annual flood",
-           "GEV sample f\u209c", INK, fs=13)}
+      <!-- flood level feeds Channel 1 and Channel 2 (clean split) -->
+      {path([(SX,304),(160,304),(160,356)], C1, marker="ah1")}
+      {path([(SX,304),(390,304),(390,356)], C2, marker="ah2")}
+      {lbl(232, 330, "if flooded", C1, size=9.5, italic=True)}
+      {lbl(430, 330, "if neighbour retrofits", C2, size=9.5, italic=True)}
 
-      <!-- Channel 1 & Channel 2 side by side -->
-      {vline(SX, 286, 322)}
-      {box(60, 324, 170, 68, C1, "#0369a1", "Channel 1",
-           "Flood experience", fs=13)}
-      {box(250, 324, 170, 68, C2, "#15803d", "Channel 2",
-           "Proximity", fs=13)}
-      <!-- flood feeds both channels -->
-      {path([(SX,308),(145,308),(145,324)])}
-      {path([(SX,308),(335,308),(335,324)])}
+      <!-- Channel 3 fed once from the prior belief (routed down the right) -->
+      {path([(SX+150,130),(715,130),(715,356)], C3, dash="6 4", marker="aho")}
+      {lbl(710, 122, "once, at t=0", C3, size=10, anchor="end")}
 
-      <!-- sub-labels for the two channels -->
-      {lbl(145, 384, "\u03bb_flood \u00d7 \u03bb_risk_perc", "#e6f5ff", weight="600", size=9)}
-      {lbl(335, 384, "\u03bb_social \u00d7 \u03bb_sim", "#e7fbef", weight="600", size=9)}
-
-      <!-- both channels converge on update belief -->
-      {path([(145,392),(145,424),(SX-40,424),(SX-40,442)], C1)}
-      {path([(335,392),(335,424),(SX+40,424),(SX+40,442)], C2)}
+      <!-- all three channels converge on 'update belief' -->
+      {path([(160,432),(160,462),(SX-45,462),(SX-45,486)], C1)}
+      {path([(390,432),(390,462),(SX+45,462),(SX+45,486)], C2)}
+      {path([(715,432),(715,505),(SX+115,505)], C3)}
 
       <!-- update belief -->
-      {box(SX-110, 444, 220, 46, "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)",
-           "odds \u00d7 Bayes factors", INK, fs=13)}
-      {vline(SX, 490, 520)}
+      {box(SX-115, 488, 230, 48, "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)",
+           "posterior odds = prior odds \u00d7 Bayes factors", INK, fs=13.5)}
+      {vline(SX, 536, 566)}
 
       <!-- decision diamond (inside loop) -->
-      <polygon points="{SX},520 {SX+108},556 {SX},592 {SX-108},556" fill="#fff7ed"
-               stroke="{C3}" stroke-width="1.5"/>
-      {lbl(SX, 552, "P(H\u2081) \u2265 \u03b8 ?", INK, size=12)}
-      {lbl(SX, 570, "PMT threshold", MUT, weight="500", size=9.5)}
+      <polygon points="{SX},566 {SX+115},602 {SX},638 {SX-115},602" fill="#fff7ed"
+               stroke="{C3}" stroke-width="1.6"/>
+      {lbl(SX, 598, "P(H\u2081) \u2265 \u03b8 ?", INK, size=13)}
+      {lbl(SX, 616, "PMT threshold", MUT, weight="500", size=10)}
 
-      <!-- NO: loop back up to flood draw (routed on far left) -->
-      {path([(SX-108,556),(20,556),(20,263),(SX-110,263)])}
-      {lbl(96, 548, "no", MUT, size=10.5)}
-      <text x="20" y="410" text-anchor="middle" font-size="9.5"
-            fill="{MUT}" font-style="italic"
-            transform="rotate(-90 20 410)">carry belief to next year</text>
+      <!-- NO: loop back up to the flood-level box (routed on the far left) -->
+      {path([(SX-115,602),(25,602),(25,280),(SX-115,280)])}
+      {lbl(100, 594, "no", MUT, size=11)}
+      <rect x="8" y="380" width="20" height="130" fill="#ffffff" opacity="0.85"/>
+      <text x="20" y="445" text-anchor="middle" font-size="10.5" fill="{MUT}"
+            font-style="italic" transform="rotate(-90 20 445)">carry belief to next year</text>
 
       <!-- YES: down to retrofit (below the loop) -->
-      {path([(SX,592),(SX,632)], GRN, marker="ahg")}
-      {lbl(SX+22, 618, "yes", GRN, size=10.5, anchor="start")}
-      {box(SX-120, 634, 240, 50, "#dcfce7", GRN, "Retrofit (absorbing)",
-           "leaves the risk pool permanently", INK)}
+      {path([(SX,638),(SX,668)], GRN, marker="ahg")}
+      {lbl(SX+24, 656, "yes", GRN, size=11, anchor="start")}
+      {box(SX-130, 670, 260, 52, "#dcfce7", GRN, "Retrofit  (absorbing)",
+           "household leaves the risk pool permanently", INK, fs=14)}
+
+      <!-- outputs note to the right of retrofit -->
+      {path([(SX+130,696),(620,696)], MUT)}
+      {box(620, 670, 200, 52, "#eef2f7", "#cbd5e1", "Model outputs",
+           "adoption curve, survey comparison", INK, fs=12.5)}
     </svg>'''
     return svg
 
@@ -1737,7 +1755,7 @@ def _page_home():
     import base64
 
     st.markdown("<div style='height:0.3rem;'></div>", unsafe_allow_html=True)
-    left, right = st.columns([1, 1], gap="large")
+    left, right = st.columns([5, 7], gap="large")
 
     with left:
         st.markdown(
@@ -1779,8 +1797,8 @@ def _page_home():
         b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
         st.markdown(
             f"<img src='data:image/svg+xml;base64,{b64}' "
-            "style='width:100%;max-width:560px;height:auto;display:block;"
-            "margin:0 auto;'/>", unsafe_allow_html=True)
+            "style='width:100%;max-width:820px;height:auto;display:block;"
+            "margin:0.4rem auto 0 auto;'/>", unsafe_allow_html=True)
 
 
 def _run_app():
