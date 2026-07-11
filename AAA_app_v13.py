@@ -434,7 +434,16 @@ class FloodAdaptationModel(mesa.Model):
     """Flood adaptation with three-channel Bayesian updating."""
 
     def __init__(self, params, seed=None):
-        super().__init__(seed=seed if seed is not None else params["RANDOM_SEED"])
+        _seed = seed if seed is not None else params["RANDOM_SEED"]
+        # Mesa 3.x accepts rng=; older builds only seed=. Try the modern
+        # keyword first and fall back so the model works across versions.
+        try:
+            super().__init__(rng=np.random.default_rng(_seed))
+        except TypeError:
+            super().__init__(seed=_seed)
+        # Guarantee a usable numpy Generator regardless of Mesa version.
+        if not hasattr(self, "rng") or not hasattr(self.rng, "integers"):
+            self.rng = np.random.default_rng(_seed)
         for k, v in params.items():
             setattr(self, k, v)
         self.n_agents = params["N_AGENTS"]
@@ -492,7 +501,7 @@ class FloodAdaptationModel(mesa.Model):
             self.agents_by_node[i] = agent
 
         # Channel 3 fires once, now, before the loop and any flood.
-        for agent in self.agents:
+        for agent in list(self.agents):
             agent.apply_information_prior()
             agent.make_decision()   # some may already cross threshold at t=0
 
@@ -855,19 +864,30 @@ PMT threshold (Rogers, 1975), heterogeneous via a clipped Normal.
 """)
 
 
-if __name__ == "__main__":
+def _running_in_streamlit():
     try:
-        import streamlit.runtime.scriptrunner as _srr
-        _in_streamlit = _srr.get_script_run_ctx() is not None
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        return get_script_run_ctx() is not None
     except Exception:
-        _in_streamlit = False
-    if _in_streamlit:
+        return False
+
+
+if _running_in_streamlit():
+    # Any exception here is surfaced on the page (with the full traceback)
+    # instead of Streamlit's blank "Oh no." error screen.
+    import streamlit as st
+    try:
         _run_app()
-    else:
-        # headless smoke test
-        m = FloodAdaptationModel(dict(DEFAULTS), seed=42)
-        m.run()
-        rates = cumulative_model_rates(list(m.agents), DEFAULTS["OBSERVED_CUM_MAX"])
-        print("cumulative model rates 0/<=4/5+:", ["%.1f" % r for r in rates])
-        print("final pct retrofitted: %.1f%%" %
-              m.get_model_dataframe()["pct_retrofitted"].iloc[-1])
+    except Exception as _e:
+        import traceback
+        st.error("The app hit an error while starting. Full details below.")
+        st.exception(_e)
+        st.code(traceback.format_exc())
+elif __name__ == "__main__":
+    # headless smoke test
+    m = FloodAdaptationModel(dict(DEFAULTS), seed=42)
+    m.run()
+    rates = cumulative_model_rates(list(m.agents), DEFAULTS["OBSERVED_CUM_MAX"])
+    print("cumulative model rates 0/<=4/5+:", ["%.1f" % r for r in rates])
+    print("final pct retrofitted: %.1f%%" %
+          m.get_model_dataframe()["pct_retrofitted"].iloc[-1])
