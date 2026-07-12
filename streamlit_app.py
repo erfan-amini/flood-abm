@@ -5,9 +5,11 @@ attributes, network, neighborhoods, model) are inlined here; there are no
 external FFF_*.py or AAA_model_*.py dependencies.
 
 Binary hypothesis model:
-  H1 = "I should retrofit my house"
-  H0 = "I should not retrofit my house"
-Belief P(H1) updates via Bayes' theorem in odds form
+  H1 = "I retrofit my house"
+  H0 = "I do not retrofit my house"
+Belief P(H1) is the household's probability of retrofitting, which serves as
+a proxy for the household judging that a retrofit is needed. It updates via
+Bayes' theorem in odds form
 (Jaynes, 2003, Ch. 4; Kass & Raftery, 1995):
   posterior_odds = prior_odds x Bayes_factor
 
@@ -26,7 +28,7 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
        safe years produce no update (Tversky & Kahneman, 1974).
 
   2. Proximity-based social learning
-       base:       lambda_social       per newly-retrofitted connected
+       base:       lambda_observation  per newly-retrofitted connected
                    neighbor (Granovetter, 1978).
        multiplier: lambda_similarity   active when that neighbor is similar,
                    i.e. Gower similarity S(i,j) >= SIM_THRESHOLD
@@ -116,7 +118,7 @@ DEFAULTS = dict(
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_SOCIAL=2.00, LAMBDA_SIMILARITY=1.10, SIM_THRESHOLD=0.50,
+    LAMBDA_OBSERVATION=2.00, LAMBDA_SIMILARITY=1.10, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
@@ -432,7 +434,7 @@ class HouseholdAgent(mesa.Agent):
     def social_learning(self):
         """
         For each connected neighbor newly observed as retrofitted, apply the
-        base proximity factor lambda_social times the similarity multiplier
+        base proximity factor lambda_observation times the similarity multiplier
         lambda_similarity when that neighbor is similar (Gower S >= threshold).
         With no retrofitted neighbor the channel is inert.
         """
@@ -444,7 +446,7 @@ class HouseholdAgent(mesa.Agent):
                 self.observed_retrofitted.add(neighbor.unique_id)
                 S = m.G.edges[self.pos, neighbor.pos]["similarity"]
                 mult = m.LAMBDA_SIMILARITY if S >= m.SIM_THRESHOLD else 1.0
-                self.belief = bayesian_update(self.belief, m.LAMBDA_SOCIAL * mult)
+                self.belief = bayesian_update(self.belief, m.LAMBDA_OBSERVATION * mult)
 
     # -- Channel 3: trusted information (applied once at init) ---------------
     def apply_information_prior(self):
@@ -803,7 +805,7 @@ def _collect_params():
         LAMBDA_DAMAGE_MAX=g("LAMBDA_DAMAGE_MAX", D["LAMBDA_DAMAGE_MAX"]),
         TOTAL_FAILURE_DEPTH=g("TOTAL_FAILURE_DEPTH", D["TOTAL_FAILURE_DEPTH"]),
         DEPTH_DAMAGE_CURVE=D["DEPTH_DAMAGE_CURVE"],
-        LAMBDA_SOCIAL=g("LAMBDA_SOCIAL", D["LAMBDA_SOCIAL"]),
+        LAMBDA_OBSERVATION=g("LAMBDA_OBSERVATION", D["LAMBDA_OBSERVATION"]),
         LAMBDA_SIMILARITY=g("LAMBDA_SIMILARITY", D["LAMBDA_SIMILARITY"]),
         SIM_THRESHOLD=g("SIM_THRESHOLD", D["SIM_THRESHOLD"]),
         LAMBDA_INFO=g("LAMBDA_INFO", D["LAMBDA_INFO"]),
@@ -895,7 +897,7 @@ def _page_settings():
     st.markdown("### \U0001F3AF Core decision drivers")
 
     _sec("Belief & Decision Threshold",
-         "Prior belief that a home should be retrofitted, and the PMT bar it must clear.",
+         "Prior probability that a household retrofits (a proxy for judging a retrofit is needed), and the PMT bar it must clear.",
          C_BELIEF)
     het_on = st.checkbox(
         "Threshold Heterogeneity  (draw individual \u03b8 from Uniform[min, max])",
@@ -907,7 +909,7 @@ def _page_settings():
         bc1, bc2, bc3 = st.columns(3)
         with bc1:
             nb("Initial Belief  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
-               help="Prior probability that a household should retrofit.")
+               help="Prior probability that a household retrofits (proxy for judging a retrofit is needed).")
         with bc2:
             nb("\u03b8 Minimum", "PMT_THRESHOLD_LOW", 0.01, "%.2f", 0.01, 0.99,
                help="Lower bound of the uniform threshold distribution.")
@@ -918,7 +920,7 @@ def _page_settings():
         bc1, bc2 = st.columns(2)
         with bc1:
             nb("Initial Belief  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
-               help="Prior probability that a household should retrofit.")
+               help="Prior probability that a household retrofits (proxy for judging a retrofit is needed).")
         with bc2:
             nb("Decision Threshold  \u03b8", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 0.99,
                help="Single belief level at which every household acts [14].")
@@ -938,7 +940,7 @@ def _page_settings():
     with ch2:
         _sec("Channel 2 \u00b7 Proximity",
              "Social learning from retrofitted neighbours, stronger if similar.", C_CH2)
-        nb("\u03bb_social  (base, per neighbor)", "LAMBDA_SOCIAL", 0.01, "%.2f", 1.0, None,
+        nb("\u03bb_observation  (base, per neighbor)", "LAMBDA_OBSERVATION", 0.01, "%.2f", 1.0, None,
            help="Bayes factor per newly-retrofitted connected neighbor [7].")
         nb("\u03bb_similarity  (\u00d7 if similar)", "LAMBDA_SIMILARITY", 0.1, "%.2f", 1.0, None,
            help="Applied when the retrofitted neighbor is similar "
@@ -1181,7 +1183,7 @@ def _config_chips(p):
         ("P(H\u2081)", f"{p['INITIAL_BELIEF']:.2f}"),
         ("\u03b8", f"{p['PMT_THRESHOLD_MEAN']:.2f}"),
         ("\u03bb_flood\u00d7\u03bb_dmg", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_DAMAGE_MAX']:.2f}"),
-        ("\u03bb_social\u00d7\u03bb_sim", f"{p['LAMBDA_SOCIAL']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
+        ("\u03bb_obs\u00d7\u03bb_sim", f"{p['LAMBDA_OBSERVATION']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
         ("\u03bb_info\u00d7\u03bb_resp", f"{p['LAMBDA_INFO']:.2f}\u00d7{p['LAMBDA_RESPONSE']:.2f}"),
         ("Seed", p["RANDOM_SEED"]),
     ]
@@ -1280,8 +1282,10 @@ def _page_documentation():
     st.markdown('<div class="doc-h">2 &nbsp; Overview</div>', unsafe_allow_html=True)
     st.markdown(
         "Each agent is a household at a fixed location with elevation $z_i$. It "
-        "holds a subjective belief $P_i(H_1)\\in[0,1]$ that it should retrofit, "
-        "and it retrofits at the first moment that belief reaches its personal "
+        "holds a subjective belief $P_i(H_1)\\in[0,1]$ \u2014 its probability of "
+        "retrofitting, which serves as a proxy for the household judging that a "
+        "retrofit is needed \u2014 and it retrofits at the first moment that belief "
+        "reaches its personal "
         "Protection Motivation Theory (PMT) threshold $\\theta_i$. Belief is "
         "revised over time as evidence arrives through three channels. "
         "Retrofitting is **absorbing**: once a household retrofits it takes no "
@@ -1295,8 +1299,11 @@ def _page_documentation():
 
     st.markdown("#### 3.1 &nbsp; Bayesian belief updating \u2014 full formulation")
     st.markdown(
-        "Each agent maintains a belief $P_i(H_1)$, where $H_1$ = \u201cI should "
-        "retrofit my house\u201d and $H_0$ = \u201cI should not.\u201d Every evidence event "
+        "Each agent maintains a belief $P_i(H_1)$, where $H_1$ = \u201cI retrofit "
+        "my house\u201d and $H_0$ = \u201cI do not.\u201d This probability of taking the "
+        "retrofit action is used as a proxy for whether the household judges a "
+        "retrofit to be needed \u2014 the survey observes the action, not the "
+        "underlying judgement. Every evidence event "
         "is processed in three algebraic steps ([10]; Kass & "
         "Raftery, 1995).")
     st.markdown("**Step 1 \u2014 Convert probability to odds.** Odds give a natural "
@@ -1393,14 +1400,14 @@ def _page_documentation():
         "Euclidean distance $d(i,j)\\le$ `DISTANCE_THRESHOLD`. Let "
         "$\\mathcal{N}_i^{(t)}$ be the connected neighbours **newly observed** "
         "to have retrofitted at step $t$ (each counted once \u2014 one-shot "
-        "learning). For each such neighbour the base factor $\\lambda_{social}$ "
+        "learning). For each such neighbour the base factor $\\lambda_{obs}$ "
         "[7] is multiplied by a similarity multiplier "
         "$\\lambda_{similarity}$ when the neighbour is **similar**, i.e. their "
         "Gower similarity meets the threshold [6], [12]:")
     st.latex(r"""\lambda_{\text{prox},ij} =
 \begin{cases}
-\lambda_{social}\cdot\lambda_{similarity} & j\ \text{retrofitted and } S(i,j)\ge S^\ast\\
-\lambda_{social} & j\ \text{retrofitted and } S(i,j)< S^\ast\\
+\lambda_{obs}\cdot\lambda_{similarity} & j\ \text{retrofitted and } S(i,j)\ge S^\ast\\
+\lambda_{obs} & j\ \text{retrofitted and } S(i,j)< S^\ast\\
 1 & \text{no newly-retrofitted neighbour}
 \end{cases}""")
     st.markdown("This channel is grounded in empirical evidence that flood "
@@ -1799,7 +1806,7 @@ def _workflow_svg():
       {box("assign", "#f1f5f9", "#cbd5e1", "Assign attributes &amp; prior belief", "attributes, elevation, trusted info, forecast info", tcol=INK)}
       {box("flood", "#e0f2fe", SKY, "Annual flood level", "GEV sample f\u209c", tcol=INK, fs=14)}
       {box("ch1", C1, "#0369a1", "Channel 1", "Flood experience", "\u03bb_flood \u00d7 \u03bb_damage", fs=14)}
-      {box("ch2", C2, "#15803d", "Channel 2", "Proximity", "\u03bb_social \u00d7 \u03bb_sim", fs=14)}
+      {box("ch2", C2, "#15803d", "Channel 2", "Proximity", "\u03bb_obs \u00d7 \u03bb_sim", fs=14)}
       {box("ch3", C3, "#c2610c", "Channel 3", "Information (t=0)", "\u03bb_info \u00d7 \u03bb_response", fs=14)}
       {box("belief", "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)", "posterior odds = prior odds \u00d7 Bayes factors", tcol=INK, fs=13.5)}
       {box("retrofit", "#dcfce7", GRN, "Retrofit  (absorbing)", "household leaves the risk pool permanently", tcol=INK, fs=14)}
@@ -1856,7 +1863,7 @@ def _page_home():
         st.markdown(
             "This tool simulates how households along a flood-exposed coastline "
             "decide whether to retrofit their homes. Each household holds a "
-            "belief that it should retrofit and updates that belief as evidence "
+            "probability of retrofitting \u2014 a proxy for judging a retrofit is needed \u2014 and updates it as evidence "
             "arrives through three channels \u2014 **personal flood experience**, "
             "**social influence from retrofitted neighbours**, and **trusted "
             "information** \u2014 acting once its belief crosses a personal decision "
