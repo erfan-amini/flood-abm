@@ -93,7 +93,7 @@ DEFAULTS = dict(
     TIME_STEPS=75, RANDOM_SEED=42,
     # Spatial / population
     N_AGENTS=200, GRID_ROWS=3, GRID_COLS=4, N_CONNECTORS=2,
-    SLOPE=0.2, NOISE_FACTOR=0.05,
+    SLOPE=1.0, NOISE_FACTOR=0.05,
     # Attributes
     ENABLE_HETEROGENEITY=True, N_ATTRIBUTES=2, N_CLASSES=3,
     # Network / neighborhoods
@@ -135,9 +135,8 @@ DEFAULTS = dict(
     ENABLE_THRESHOLD_HET=True,
     # Flood (GEV)
     RETURN_PERIODS=[10, 20, 50, 100],
-    FLOOD_LEVELS=[0.05, 0.10, 0.15, 0.30],
-    # Observed cumulative "at most k" retrofit rates (%)
-    OBSERVED_CUM_LABELS=["0", "\u22644", "5+"],
+    FLOOD_LEVELS=[0.1, 0.2, 0.4, 0.6],
+    # Observed cumulative "at most k" retrofit rates (%)    OBSERVED_CUM_LABELS=["0", "\u22644", "5+"],
     OBSERVED_CUM_RATES=[18.0, 22.3, 27.4],
     OBSERVED_CUM_MAX=[0, 4, np.inf],   # upper flood-count bound for each cumulative bin
 )
@@ -821,7 +820,7 @@ def _collect_params():
         params["RETURN_PERIODS"] = [int(x) for x in
                                     str(g("RETURN_PERIODS", "10,20,50,100")).split(",")]
         params["FLOOD_LEVELS"] = [float(x) for x in
-                                  str(g("FLOOD_LEVELS", "0.05,0.10,0.15,0.30")).split(",")]
+                                  str(g("FLOOD_LEVELS", "0.1,0.2,0.4,0.6")).split(",")]
     except Exception:
         params["RETURN_PERIODS"] = D["RETURN_PERIODS"]
         params["FLOOD_LEVELS"] = D["FLOOD_LEVELS"]
@@ -995,7 +994,6 @@ def _page_settings():
             ni("Grid Rows", "GRID_ROWS", 1, 10)
             ni("Grid Cols", "GRID_COLS", 1, 10)
             ni("Connectors", "N_CONNECTORS", 0, 10)
-            nb("Elevation Slope", "SLOPE", 0.01, "%.2f", 0.01, 2.0)
             nb("Elevation Noise", "NOISE_FACTOR", 0.01, "%.2f", 0.0, 1.0)
         with s3:
             _sec("Network", "Who is connected, and cluster detection.", C_MINOR)
@@ -1011,10 +1009,15 @@ def _page_settings():
                           value=", ".join(str(x) for x in D["RETURN_PERIODS"]),
                           key="p_RETURN_PERIODS",
                           help="Comma-separated return periods (years).")
+            # Flood levels are the per-return-period coefficients directly (the
+            # elevation slope is fixed at 1, so level = coefficient). Defaults
+            # for 10/20/50/100-yr are 0.1/0.2/0.4/0.6; edit as needed.
             st.text_input("Flood Levels",
                           value=", ".join(str(x) for x in D["FLOOD_LEVELS"]),
                           key="p_FLOOD_LEVELS",
-                          help="Comma-separated flood levels matching the return periods.")
+                          help="Comma-separated flood levels matching the "
+                               "return periods (elevation slope is fixed at 1, "
+                               "so these are the coefficients directly).")
         with f2:
             _sec("Run controls", "Length and reproducibility of the simulation.", C_MINOR)
             ni("Time Steps", "TIME_STEPS", 10, 10000, 10)
@@ -1621,9 +1624,13 @@ def _page_documentation():
                 unsafe_allow_html=True)
     st.markdown(
         "**Research mode** generates a synthetic settlement: household "
-        "positions on a connected grid, elevations from a linear coastal "
-        "gradient with noise, and annual floods sampled from a GEV distribution "
-        "fitted to the return periods and levels on the Settings page. It "
+        "positions on a connected grid, elevations from a coastal gradient "
+        "(slope fixed at 1, so $z$ spans $[0,1]$) with noise, and annual floods "
+        "sampled from a GEV distribution "
+        "fitted to the return periods and levels on the Settings page. Because "
+        "the slope is 1, the flood levels are the per-return-period coefficients "
+        "directly (defaults 0.1 / 0.2 / 0.4 / 0.6 for the 10/20/50/100-yr "
+        "floods). It "
         "converts each flood's depth into damage using the model's built-in "
         "**depth\u2013damage function**, which drives the experience channel's "
         "$\\lambda_{damage}$ multiplier. Use it "
