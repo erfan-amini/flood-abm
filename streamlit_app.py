@@ -763,18 +763,6 @@ def _check_password():
     return False
 
 
-def _read_curve(session, default):
-    """Read the edited depth-damage table (a DataFrame from st.data_editor)
-    into a sorted list of (depth, damage) tuples."""
-    import pandas as pd
-    cur = session.get("p_DEPTH_DAMAGE_CURVE", None)
-    if cur is None:
-        return default
-    df = cur if isinstance(cur, pd.DataFrame) else pd.DataFrame(cur)
-    df = df.dropna().sort_values("depth")
-    return [(float(r.depth), float(r.damage)) for r in df.itertuples()]
-
-
 def _collect_params():
     """Read every parameter box (Settings page) into a params dict."""
     import streamlit as st
@@ -802,7 +790,7 @@ def _collect_params():
         LAMBDA_FLOOD=g("LAMBDA_FLOOD", D["LAMBDA_FLOOD"]),
         LAMBDA_DAMAGE_MAX=g("LAMBDA_DAMAGE_MAX", D["LAMBDA_DAMAGE_MAX"]),
         TOTAL_FAILURE_DEPTH=g("TOTAL_FAILURE_DEPTH", D["TOTAL_FAILURE_DEPTH"]),
-        DEPTH_DAMAGE_CURVE=_read_curve(S, D["DEPTH_DAMAGE_CURVE"]),
+        DEPTH_DAMAGE_CURVE=D["DEPTH_DAMAGE_CURVE"],
         LAMBDA_SOCIAL=g("LAMBDA_SOCIAL", D["LAMBDA_SOCIAL"]),
         LAMBDA_SIMILARITY=g("LAMBDA_SIMILARITY", D["LAMBDA_SIMILARITY"]),
         SIM_THRESHOLD=g("SIM_THRESHOLD", D["SIM_THRESHOLD"]),
@@ -946,31 +934,6 @@ def _page_settings():
            help="Survey (never-flooded): 0.48.")
         nb("Fraction using forecast info", "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
            help="Survey (never-flooded): 0.65.")
-
-    # ---- depth-damage curve (drives Channel 1's damage multiplier) ----
-    st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
-    _sec("Depth\u2013damage function",
-         "Maps each flood depth to a damage fraction D \u2208 [0, 1]. On a flood, "
-         "\u03bb_damage = 1 + (\u03bb_damage max \u2212 1) \u00d7 D, so deeper floods move belief "
-         "more. Edit the points below; values are interpolated linearly.", C_CH1)
-    import pandas as _pd
-    dd1, dd2 = st.columns([3, 4])
-    with dd1:
-        default_curve = _pd.DataFrame(D["DEPTH_DAMAGE_CURVE"],
-                                      columns=["depth", "damage"])
-        st.data_editor(default_curve, key="p_DEPTH_DAMAGE_CURVE",
-                       num_rows="dynamic", width="stretch",
-                       column_config={
-                           "depth": st.column_config.NumberColumn(
-                               "Flood depth", step=0.005, format="%.3f"),
-                           "damage": st.column_config.NumberColumn(
-                               "Damage fraction", min_value=0.0, max_value=1.0,
-                               step=0.05, format="%.2f")})
-    with dd2:
-        cur = st.session_state.get("p_DEPTH_DAMAGE_CURVE", default_curve)
-        cur = cur if isinstance(cur, _pd.DataFrame) else _pd.DataFrame(cur)
-        st.caption("Damage fraction vs flood depth")
-        st.line_chart(cur.set_index("depth")["damage"], height=190)
 
     # ===================== SECONDARY / STRUCTURAL =====================
     st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
@@ -1610,10 +1573,10 @@ def _page_documentation():
         "**Research mode** generates a synthetic settlement: household "
         "positions on a connected grid, elevations from a linear coastal "
         "gradient with noise, and annual floods sampled from a GEV distribution "
-        "fitted to the return periods and levels on the Settings page. It also "
-        "uses the **depth\u2013damage function** on the Settings page to convert "
-        "each flood's depth into the damage that drives the experience "
-        "channel's $\\lambda_{damage}$ multiplier. Use it "
+        "fitted to the return periods and levels on the Settings page. It "
+        "converts each flood's depth into damage using the model's built-in "
+        "**depth\u2013damage function**, which drives the experience channel's "
+        "$\\lambda_{damage}$ multiplier. Use it "
         "for controlled experiments and sensitivity analysis.\n\n"
         "**Case-study mode** replaces the synthetic setting with real data: "
         "upload a **location CSV** (columns `x, y, z` \u2014 one row per household, "
@@ -1621,7 +1584,7 @@ def _page_documentation():
         "`flood_level` \u2014 one value per time step, replayed in order). You may "
         "also upload an optional **depth\u2013damage CSV** (columns `depth`, "
         "`damage`) to give this case study its own vulnerability curve; if "
-        "omitted, the Settings-page curve is used. The agent "
+        "omitted, the built-in default curve is used. The agent "
         "count is taken from the location file; every other behavioural "
         "parameter still comes from the Settings page, so the same calibrated "
         "mechanism can be driven by an observed landscape and flood history.")
@@ -1966,9 +1929,10 @@ def _run_app():
             uploaded_curve = st.file_uploader("Depth\u2013damage CSV (optional)",
                                               type=["csv"], key="curve_upl",
                                               help="Columns 'depth', 'damage'. "
-                                                   "Overrides the Settings-page "
-                                                   "curve; if omitted, that curve "
-                                                   "is used.")
+                                                   "Sets this case study's "
+                                                   "vulnerability curve; if "
+                                                   "omitted, the built-in "
+                                                   "default curve is used.")
 
         st.markdown('<hr/>', unsafe_allow_html=True)
 
@@ -2011,7 +1975,7 @@ def _run_app():
                     st.error("Flood series CSV needs a 'flood_level' column.")
                     st.stop()
                 params["CUSTOM_FLOOD_SERIES"] = fdf["flood_level"].to_numpy(float)
-                # Optional depth-damage curve: overrides the Settings-page curve.
+                # Optional depth-damage curve for this case study.
                 if uploaded_curve is not None:
                     uploaded_curve.seek(0)
                     ddf = pd.read_csv(uploaded_curve)
