@@ -100,14 +100,14 @@ DEFAULTS = dict(
     # baseline against which the survey odds ratios were estimated; the raw
     # survey point-estimates (e.g. b0 ~ 0.23) assume the other channels held
     # at baseline, so they cannot all be defaults at once without saturating.
-    INITIAL_BELIEF=0.08,
+    INITIAL_BELIEF=0.60,
     # Channel 1 - experience.  Survey anchor: LAMBDA_FLOOD 1.52 (owner per-flood
     # odds ratio).  On a flood, the base factor is amplified by a DAMAGE
     # multiplier that scales with how deep the flood is at the house: a
     # depth-damage curve maps the flood depth to a damage fraction D in [0, 1],
     # and lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D grows from 1 (no
     # damage) to LAMBDA_DAMAGE_MAX (total failure at TOTAL_FAILURE_DEPTH).
-    LAMBDA_FLOOD=1.52, LAMBDA_DAMAGE_MAX=1.20,
+    LAMBDA_FLOOD=1.30, LAMBDA_DAMAGE_MAX=1.20,
     TOTAL_FAILURE_DEPTH=0.05,
     # depth-damage curve: (depth, damage_fraction) points, interpolated
     # linearly.  D(0)=0 and D(TOTAL_FAILURE_DEPTH)=1 by construction.
@@ -116,7 +116,7 @@ DEFAULTS = dict(
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_SOCIAL=1.30, LAMBDA_SIMILARITY=1.00, SIM_THRESHOLD=0.50,
+    LAMBDA_SOCIAL=2.00, LAMBDA_SIMILARITY=1.10, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
@@ -129,7 +129,7 @@ DEFAULTS = dict(
     # from Uniform(LOW, HIGH); when OFF, every household uses MEAN (a single
     # point value).
     PMT_THRESHOLD_MEAN=0.85,
-    PMT_THRESHOLD_LOW=0.75, PMT_THRESHOLD_HIGH=0.95,
+    PMT_THRESHOLD_LOW=0.90, PMT_THRESHOLD_HIGH=1.00,
     ENABLE_THRESHOLD_HET=True,
     # Flood (GEV)
     RETURN_PERIODS=[10, 20, 50, 100],
@@ -769,8 +769,20 @@ def _collect_params():
     D = DEFAULTS
     S = st.session_state
 
+    # Streamlit garbage-collects the state of widgets that are not rendered in
+    # the current run (e.g. while the user is on the Results page).  To keep
+    # settings across navigation, we mirror every widget value into a plain
+    # dict S["_persist"] that is NOT tied to any widget's lifecycle, and seed
+    # each widget from it on the way back.
+    if "_persist" not in S:
+        S["_persist"] = {}
+    _P = S["_persist"]
+
+    def _sync(key):
+        _P[key] = S[key]
+
     def g(key, default):
-        return S.get(f"p_{key}", default)
+        return _P.get(f"p_{key}", S.get(f"p_{key}", default))
 
     params = dict(D)
     params.update(
@@ -863,13 +875,21 @@ def _page_settings():
                 unsafe_allow_html=True)
 
     def nb(label, key, step, fmt="%.2f", minv=0.0, maxv=None, help=None):
-        st.number_input(label, value=float(D[key]), min_value=float(minv),
+        skey = f"p_{key}"
+        val = float(_P.get(skey, D[key]))
+        st.number_input(label, value=val, min_value=float(minv),
                         max_value=(float(maxv) if maxv is not None else None),
-                        step=float(step), format=fmt, key=f"p_{key}", help=help)
+                        step=float(step), format=fmt, key=skey, help=help,
+                        on_change=_sync, args=(skey,))
+        _P[skey] = S[skey]
 
     def ni(label, key, minv, maxv, step=1, help=None):
-        st.number_input(label, value=int(D[key]), min_value=int(minv),
-                        max_value=int(maxv), step=int(step), key=f"p_{key}", help=help)
+        skey = f"p_{key}"
+        val = int(_P.get(skey, D[key]))
+        st.number_input(label, value=val, min_value=int(minv),
+                        max_value=int(maxv), step=int(step), key=skey, help=help,
+                        on_change=_sync, args=(skey,))
+        _P[skey] = S[skey]
 
     # ===================== PRIMARY DRIVERS =====================
     st.markdown("### \U0001F3AF Core decision drivers")
@@ -879,7 +899,10 @@ def _page_settings():
          C_BELIEF)
     het_on = st.checkbox(
         "Threshold Heterogeneity  (draw individual \u03b8 from Uniform[min, max])",
-        value=D["ENABLE_THRESHOLD_HET"], key="p_ENABLE_THRESHOLD_HET")
+        value=bool(_P.get("p_ENABLE_THRESHOLD_HET", D["ENABLE_THRESHOLD_HET"])),
+        key="p_ENABLE_THRESHOLD_HET",
+        on_change=_sync, args=("p_ENABLE_THRESHOLD_HET",))
+    _P["p_ENABLE_THRESHOLD_HET"] = S["p_ENABLE_THRESHOLD_HET"]
     if het_on:
         bc1, bc2, bc3 = st.columns(3)
         with bc1:
@@ -947,9 +970,12 @@ def _page_settings():
         with s1:
             _sec("Population", "How many households, and how varied.", C_MINOR)
             ni("Number of Agents", "N_AGENTS", 10, 100000, 10)
-            st.checkbox("Attribute Heterogeneity", value=D["ENABLE_HETEROGENEITY"],
+            st.checkbox("Attribute Heterogeneity",
+                        value=bool(_P.get("p_ENABLE_HETEROGENEITY", D["ENABLE_HETEROGENEITY"])),
                         key="p_ENABLE_HETEROGENEITY",
+                        on_change=_sync, args=("p_ENABLE_HETEROGENEITY",),
                         help="If off, all agents identical (S=1 for all pairs).")
+            _P["p_ENABLE_HETEROGENEITY"] = S["p_ENABLE_HETEROGENEITY"]
             ni("Attributes per Agent", "N_ATTRIBUTES", 1, 10)
             ni("Classes per Attribute", "N_CLASSES", 1, 10)
         with s2:
