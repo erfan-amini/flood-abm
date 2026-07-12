@@ -637,19 +637,26 @@ def _inject_css():
           display:flex; align-items:center; gap:0; padding: 0.6rem 0.85rem; margin:0; width:100%;
           border-radius: 10px; cursor:pointer; background: transparent;
           transition: background-color .2s ease, transform .2s ease, box-shadow .2s ease; }}
-      /* Hide the radio glyph/circle entirely. Across Streamlit builds the
-         glyph lives in the label's FIRST child (a baseweb radio wrapper or a
-         bare div); the text lives in a stMarkdownContainer. We hide the first
-         child whenever it is NOT the text container, and belt-and-suspenders
-         hide any baseweb radio and the raw input. */
+      /* Hide the radio glyph/circle entirely, across all Streamlit builds,
+         without ever hiding the label text. Strategy: the text always lives
+         in a stMarkdownContainer; the glyph is everything else in the label
+         (an <svg>, a baseweb radio wrapper, or a bare styled <div>). We hide
+         the raw input, any baseweb radio, any svg, and any direct-child div
+         of the label that does NOT contain the markdown text. */
       section[data-testid="stSidebar"] [role="radiogroup"] input {{ display:none !important; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] [data-baseweb="radio"] {{
+      section[data-testid="stSidebar"] [role="radiogroup"] label svg {{ display:none !important; }}
+      section[data-testid="stSidebar"] [role="radiogroup"] label [data-baseweb="radio"] {{
           display:none !important; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child {{
+      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:not(:has([data-testid="stMarkdownContainer"])) {{
           display:none !important; width:0 !important; height:0 !important;
-          margin:0 !important; padding:0 !important; }}
-      /* but always keep the text container visible even if it is first */
-      section[data-testid="stSidebar"] [role="radiogroup"] > label [data-testid="stMarkdownContainer"] {{
+          min-width:0 !important; margin:0 !important; padding:0 !important;
+          border:0 !important; }}
+      /* the first baseweb layer inside the label often carries a fixed-width
+         slot for the glyph; collapse it but keep the text child visible. */
+      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child {{
+          min-width:0 !important; }}
+      /* always keep the text container visible. */
+      section[data-testid="stSidebar"] [role="radiogroup"] label [data-testid="stMarkdownContainer"] {{
           display:block !important; visibility:visible !important; opacity:1 !important; }}
       /* Force the label text visible and white. */
       section[data-testid="stSidebar"] [role="radiogroup"] > label,
