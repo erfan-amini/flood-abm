@@ -1790,16 +1790,20 @@ def _page_home():
             unsafe_allow_html=True)
 
     with right:
-        # Render the workflow flowchart (SVG) as a base64 data-URI <img>;
-        # Streamlit's markdown sanitiser strips inline <svg> but allows an
-        # <img> with a data URI.
-        import base64
-        svg = _workflow_svg()
-        b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
-        st.markdown(
-            f"<img src='data:image/svg+xml;base64,{b64}' "
-            "style='width:100%;max-width:820px;height:auto;display:block;"
-            "margin:0.4rem auto 0 auto;'/>", unsafe_allow_html=True)
+        # Show the workflow flowchart image (flowchart.png in the app folder).
+        import os as _os
+        if _os.path.exists("flowchart.png"):
+            try:
+                st.image("flowchart.png", width="stretch")
+            except TypeError:
+                st.image("flowchart.png", use_container_width=True)
+        else:
+            st.markdown(
+                f"<div style='border:2px dashed {CLR_SLATE300};border-radius:10px;"
+                f"padding:2.5rem 1rem;text-align:center;color:{CLR_MUTED};"
+                "background:#f8fafc;'>Place <b>flowchart.png</b> in the app "
+                "folder to display the model workflow diagram here.</div>",
+                unsafe_allow_html=True)
 
 
 def _run_app():
