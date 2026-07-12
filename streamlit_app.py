@@ -36,15 +36,16 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
   3. Trusted flood information
        base:       lambda_info         active for agents who have a trusted
                    flood-information source.
-       multiplier: lambda_forecast     active when the agent also prepares
-                   on the basis of flood forecasts. = 1 otherwise.
+       multiplier: lambda_response      active when the agent also takes
+                   precautionary action based on the forecast data.
+                   = 1 otherwise.
        Fires ONCE, at initialization (a static informational prior), because
        trusted-info and forecast-preparation are stable household traits.
 
 Survey-anchored defaults (NYC Flood Vulnerability Survey, cleaned):
   lambda_flood      1.52  (owner per-flood odds ratio)
   lambda_risk_perception  2.40  (expecting- vs not-expecting rising damage)
-  lambda_forecast   3.20  (forecast-preparation odds ratio)
+  lambda_response   3.20  (precautionary-action-on-forecast odds ratio)
   P(expects rising damage) 0.69 ; P(trusted info) 0.48 ; P(forecast prep) 0.65
   Cumulative "at most k" retrofit targets: 18.0 / 22.3 / 27.4 %
 
@@ -113,7 +114,7 @@ DEFAULTS = dict(
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
     # one-time t=0 informational prior does not by itself push belief over the
     # threshold; tune upward toward the survey anchors as needed.
-    LAMBDA_INFO=1.05, LAMBDA_FORECAST=1.15,
+    LAMBDA_INFO=1.05, LAMBDA_RESPONSE=1.15,
     P_TRUSTED_INFO=0.48, P_FORECAST_PREP=0.65,
     # PMT threshold
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
@@ -427,14 +428,15 @@ class HouseholdAgent(mesa.Agent):
     def apply_information_prior(self):
         """
         One-time informational update at t=0. Base factor lambda_info for
-        agents with a trusted flood-information source, times the forecast
-        multiplier lambda_forecast for those who also prepare on forecasts.
+        agents with a trusted flood-information source, times the response
+        multiplier lambda_response for those who also take precautionary
+        action based on the forecast data.
         Agents without trusted information receive no update.
         """
         if not self.has_trusted_info:
             return
         m = self.model
-        mult = m.LAMBDA_FORECAST if self.forecast_prep else 1.0
+        mult = m.LAMBDA_RESPONSE if self.forecast_prep else 1.0
         self.belief = bayesian_update(self.belief, m.LAMBDA_INFO * mult)
 
     def make_decision(self):
@@ -765,7 +767,7 @@ def _collect_params():
         LAMBDA_SIMILARITY=g("LAMBDA_SIMILARITY", D["LAMBDA_SIMILARITY"]),
         SIM_THRESHOLD=g("SIM_THRESHOLD", D["SIM_THRESHOLD"]),
         LAMBDA_INFO=g("LAMBDA_INFO", D["LAMBDA_INFO"]),
-        LAMBDA_FORECAST=g("LAMBDA_FORECAST", D["LAMBDA_FORECAST"]),
+        LAMBDA_RESPONSE=g("LAMBDA_RESPONSE", D["LAMBDA_RESPONSE"]),
         P_TRUSTED_INFO=g("P_TRUSTED_INFO", D["P_TRUSTED_INFO"]),
         P_FORECAST_PREP=g("P_FORECAST_PREP", D["P_FORECAST_PREP"]),
         PMT_THRESHOLD_MEAN=g("PMT_THRESHOLD_MEAN", D["PMT_THRESHOLD_MEAN"]),
@@ -897,8 +899,8 @@ def _page_settings():
         nb("\u03bb_info  (base, if trusted info)", "LAMBDA_INFO", 0.01, "%.2f", 1.0, None,
            help="One-time t=0 factor for agents with a trusted source. "
                 "Survey: weak alone (OR ~1.39).")
-        nb("\u03bb_forecast  (\u00d7 if forecast info)", "LAMBDA_FORECAST", 0.05, "%.2f", 1.0, None,
-           help="Amplifier for agents who use flood-forecast information. Survey ~3.2.")
+        nb("\u03bb_response  (\u00d7 if forecast info)", "LAMBDA_RESPONSE", 0.05, "%.2f", 1.0, None,
+           help="Amplifier for agents who take precautionary action based on the forecast data. Survey ~3.2.")
         nb("Fraction with trusted information", "P_TRUSTED_INFO", 0.01, "%.2f", 0.0, 1.0,
            help="Survey (never-flooded): 0.48.")
         nb("Fraction using forecast info", "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
@@ -1118,7 +1120,7 @@ def _config_chips(p):
         ("\u03b8", f"{p['PMT_THRESHOLD_MEAN']:.2f}"),
         ("\u03bb_flood\u00d7\u03bb_riskperc", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_RISK_PERCEPTION']:.2f}"),
         ("\u03bb_social\u00d7\u03bb_sim", f"{p['LAMBDA_SOCIAL']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
-        ("\u03bb_info\u00d7\u03bb_fc", f"{p['LAMBDA_INFO']:.2f}\u00d7{p['LAMBDA_FORECAST']:.2f}"),
+        ("\u03bb_info\u00d7\u03bb_resp", f"{p['LAMBDA_INFO']:.2f}\u00d7{p['LAMBDA_RESPONSE']:.2f}"),
         ("Seed", p["RANDOM_SEED"]),
     ]
     html = '<div class="chips">' + "".join(
@@ -1262,7 +1264,8 @@ def _page_documentation():
     st.markdown("**Worked example.** Take a prior belief $P(H_1)=0.08$, so the "
                 "prior odds are $O = 0.08/0.92 = 0.087$. Suppose a household with "
                 "a trusted information source ($\\lambda_{info}=1.05$) who also "
-                "prepares on forecasts ($\\lambda_{forecast}=1.15$) then "
+                "takes precautionary action on the forecast "
+                "($\\lambda_{response}=1.15$) then "
                 "experiences two floods, and expects rising damage "
                 "($\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,perc}}=1.60$). The "
                 "information channel fires once at $t=0$ and each flood fires "
@@ -1347,20 +1350,21 @@ def _page_documentation():
     st.markdown("#### 3.5 &nbsp; Channel 3: trusted information")
     st.markdown(
         "Applied **once, at initialisation**, because trusted-information and "
-        "forecast-preparation are stable household traits rather than repeated "
+        "forecast use are stable household traits rather than repeated "
         "events. Households with a trusted flood-information source apply a base "
-        "factor $\\lambda_{info}$, multiplied by a forecast multiplier "
-        "$\\lambda_{forecast}$ for those who also prepare on the basis of flood "
-        "forecasts:")
+        "factor $\\lambda_{info}$, multiplied by a response multiplier "
+        "$\\lambda_{response}$ for those who also take **precautionary action "
+        "based on the forecast data**:")
     st.latex(r"""\lambda_{\text{info},i} =
 \begin{cases}
-\lambda_{info}\cdot\lambda_{forecast} & \text{trusted info and forecast-preparer}\\
+\lambda_{info}\cdot\lambda_{response} & \text{trusted info and precautionary action on forecast}\\
 \lambda_{info} & \text{trusted info only}\\
 1 & \text{no trusted information}
 \end{cases}""")
     st.markdown("In the survey, having a trusted source alone is weak "
-                "(odds ratio \u2248 1.39, n.s.) while forecast preparation is the "
-                "stronger amplifier (odds ratio \u2248 3.2), which is why the base "
+                "(odds ratio \u2248 1.39, n.s.) while taking precautionary action "
+                "based on the forecast data is the stronger amplifier "
+                "(odds ratio \u2248 3.2), which is why the base "
                 "is the weaker term and the multiplier the stronger one. This "
                 "channel represents an informational prior that lifts belief at "
                 "$t=0$ for informed households.")
@@ -1426,7 +1430,7 @@ def _page_documentation():
         "decision drivers (belief, the three channels, the threshold) and "
         "structural environment settings. Survey-anchored starting values: "
         "$\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,perc}}=2.40$, "
-        "$\\lambda_{forecast}\\approx3.2$; trait fractions 0.69 / 0.48 / 0.65. "
+        "$\\lambda_{response}\\approx3.2$; trait fractions 0.69 / 0.48 / 0.65. "
         "The opening defaults are deliberately de-escalated from these raw "
         "point estimates so the model is non-saturated out of the box: each "
         "survey odds ratio was estimated holding the other channels at "
@@ -1482,9 +1486,10 @@ def _page_documentation():
         "- **Risk perception matters.** Households expecting rising flood "
         "damage retrofit more, motivating the $\\lambda_{\\mathrm{risk\\,perc}}$ multiplier "
         "on the experience channel.\n"
-        "- **Trusted information and forecast preparation raise adoption.** "
+        "- **Trusted information and precautionary action raise adoption.** "
         "Households with a trusted information source (35% vs 21%) and those "
-        "preparing on forecasts (31% vs 17%) retrofit more, motivating the "
+        "taking precautionary action based on the forecast data (31% vs 17%) "
+        "retrofit more, motivating the "
         "information channel; institutional/government sources show the "
         "strongest association.\n"
         "- **No income gradient.** Flood exposure and damage do not vary with "
@@ -1593,167 +1598,160 @@ def _page_documentation():
 # ---------------------------------------------------------------------------
 
 def _workflow_svg():
-    """Comprehensive SVG flowchart of the model workflow (ADAPT palette).
+    """Comprehensive SVG flowchart with professional edge-anchored arrows.
 
-    Landscape layout (860x780). Design invariants (do not change):
-      * Channels 1, 2, 3 sit on the SAME horizontal row.
-      * Channels 1 and 2 are INSIDE the dashed 'each time step' loop box;
-        Channel 3 is OUTSIDE it, to the RIGHT (it fires once at t=0).
-      * The loop-box right edge falls between Channel 2 and Channel 3.
-      * Every arrow terminates on a real node edge; all labels are legible.
+    Geometry system (like a real flowchart tool):
+      * Boxes are named rectangles stored in B[name] = (x, y, w, h).
+      * port(name, side) returns the CENTER of that box edge
+        (side in 'top','bottom','left','right'), so every arrow starts and
+        ends at the mid-point of a box side and stops exactly on the border.
+      * Arrows are orthogonal polylines between two ports; the marker tip
+        lands on the border with no overshoot and no gap.
+
+    Layout invariants (do not change):
+      * Channels 1, 2, 3 share one horizontal row.
+      * Channels 1 and 2 are INSIDE the dashed 'each time step' loop;
+        Channel 3 is OUTSIDE it, to the right.
     """
     C1, C2, C3 = "#0ea5e9", "#22c55e", "#f97316"   # ch1 sky, ch2 green, ch3 orange
     SKY, INK, MUT = "#0ea5e9", "#0f172a", "#64748b"
     GRN = "#22c55e"
 
-    def box(x, y, w, h, fill, stroke, title, sub="", sub2="", tcol="#ffffff",
-            rx=11, fs=14):
+    # ---- box registry -----------------------------------------------------
+    B = {
+        "init":    (240, 18, 260, 52),
+        "assign":  (215, 102, 300, 56),
+        "flood":   (255, 256, 230, 48),
+        "ch1":     (70, 356, 180, 76),
+        "ch2":     (300, 356, 180, 76),
+        "ch3":     (620, 356, 190, 76),
+        "belief":  (255, 488, 230, 48),
+        "retrofit":(240, 670, 260, 52),
+        "outputs": (620, 670, 200, 52),
+    }
+    # decision diamond: center + half-width/height
+    DCX, DCY, DHW, DHH = 370, 602, 115, 36
+
+    def port(name, side):
+        x, y, w, h = B[name]
+        if side == "top":    return (x + w / 2, y)
+        if side == "bottom": return (x + w / 2, y + h)
+        if side == "left":   return (x, y + h / 2)
+        return (x + w, y + h / 2)   # right
+
+    def dia_port(side):
+        if side == "top":    return (DCX, DCY - DHH)
+        if side == "bottom": return (DCX, DCY + DHH)
+        if side == "left":   return (DCX - DHW, DCY)
+        return (DCX + DHW, DCY)     # right
+
+    # ---- drawing helpers --------------------------------------------------
+    def box(name, fill, stroke, title, sub="", sub2="", tcol="#ffffff", fs=14,
+            grad=False):
+        x, y, w, h = B[name]
+        f = "url(#gInk)" if grad else fill
+        s = (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="11" '
+             f'fill="{f}" stroke="{stroke}" stroke-width="1.5"/>')
         cx = x + w / 2
-        s = (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{rx}" '
-             f'fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
         if sub and sub2:
-            s += (f'<text x="{cx}" y="{y+h/2-13}" text-anchor="middle" '
-                  f'dominant-baseline="middle" font-size="{fs}" font-weight="700" '
-                  f'fill="{tcol}">{title}</text>')
-            s += (f'<text x="{cx}" y="{y+h/2+3}" text-anchor="middle" '
-                  f'dominant-baseline="middle" font-size="10.5" fill="{tcol}" '
-                  f'opacity="0.95">{sub}</text>')
-            s += (f'<text x="{cx}" y="{y+h/2+18}" text-anchor="middle" '
-                  f'dominant-baseline="middle" font-size="10" fill="{tcol}" '
-                  f'opacity="0.9" font-style="italic">{sub2}</text>')
+            s += f'<text x="{cx}" y="{y+h/2-13}" text-anchor="middle" dominant-baseline="middle" font-size="{fs}" font-weight="700" fill="{tcol}">{title}</text>'
+            s += f'<text x="{cx}" y="{y+h/2+3}" text-anchor="middle" dominant-baseline="middle" font-size="10.5" fill="{tcol}" opacity="0.95">{sub}</text>'
+            s += f'<text x="{cx}" y="{y+h/2+18}" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="{tcol}" opacity="0.9" font-style="italic">{sub2}</text>'
         elif sub:
-            s += (f'<text x="{cx}" y="{y+h/2-7}" text-anchor="middle" '
-                  f'dominant-baseline="middle" font-size="{fs}" font-weight="700" '
-                  f'fill="{tcol}">{title}</text>')
-            s += (f'<text x="{cx}" y="{y+h/2+11}" text-anchor="middle" '
-                  f'dominant-baseline="middle" font-size="10.5" fill="{tcol}" '
-                  f'opacity="0.95">{sub}</text>')
+            s += f'<text x="{cx}" y="{y+h/2-7}" text-anchor="middle" dominant-baseline="middle" font-size="{fs}" font-weight="700" fill="{tcol}">{title}</text>'
+            s += f'<text x="{cx}" y="{y+h/2+11}" text-anchor="middle" dominant-baseline="middle" font-size="10.5" fill="{tcol}" opacity="0.95">{sub}</text>'
         else:
-            s += (f'<text x="{cx}" y="{y+h/2}" text-anchor="middle" '
-                  f'dominant-baseline="middle" font-size="{fs}" font-weight="700" '
-                  f'fill="{tcol}">{title}</text>')
+            s += f'<text x="{cx}" y="{y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="{fs}" font-weight="700" fill="{tcol}">{title}</text>'
         return s
 
-    def vline(x, y1, y2, color=MUT, dash="", marker="ah"):
-        d = f'stroke-dasharray="{dash}"' if dash else ""
-        return (f'<line x1="{x}" y1="{y1}" x2="{x}" y2="{y2}" stroke="{color}" '
-                f'stroke-width="2" marker-end="url(#{marker})" {d}/>')
-
-    def path(pts, color=MUT, dash="", marker="ah"):
+    def arrow(pts, color=MUT, dash="", marker="ah"):
         d = f'stroke-dasharray="{dash}"' if dash else ""
         pd = "M " + " L ".join(f"{px},{py}" for px, py in pts)
         return (f'<path d="{pd}" fill="none" stroke="{color}" stroke-width="2" '
                 f'marker-end="url(#{marker})" {d}/>')
 
-    def lbl(x, y, text, color=MUT, weight="700", size=11, anchor="middle", italic=False):
-        st = ' font-style="italic"' if italic else ''
+    def lbl(x, y, text, color=MUT, weight="700", size=12.5, anchor="middle", italic=False):
+        it = ' font-style="italic"' if italic else ''
         return (f'<text x="{x}" y="{y}" text-anchor="{anchor}" font-size="{size}" '
-                f'font-weight="{weight}" fill="{color}"{st}>{text}</text>')
+                f'font-weight="{weight}" fill="{color}"{it}>{text}</text>')
 
-    SX = 300     # main spine center (setup, flood, belief, decision)
+    def elbow_v(p_from, p_to, ymid):
+        return [p_from, (p_from[0], ymid), (p_to[0], ymid), p_to]
+
     svg = f'''<svg viewBox="0 0 860 780" xmlns="http://www.w3.org/2000/svg"
       font-family="'Source Sans Pro',system-ui,sans-serif">
       <defs>
-        <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3"
+        <marker id="ah" markerWidth="9" markerHeight="9" refX="8" refY="3"
                 orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L7,3 L0,6 Z" fill="{MUT}"/></marker>
-        <marker id="ahg" markerWidth="9" markerHeight="9" refX="7" refY="3"
+          <path d="M0,0 L8,3 L0,6 Z" fill="{MUT}"/></marker>
+        <marker id="ahg" markerWidth="9" markerHeight="9" refX="8" refY="3"
                 orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L7,3 L0,6 Z" fill="{GRN}"/></marker>
-        <marker id="aho" markerWidth="9" markerHeight="9" refX="7" refY="3"
+          <path d="M0,0 L8,3 L0,6 Z" fill="{GRN}"/></marker>
+        <marker id="aho" markerWidth="9" markerHeight="9" refX="8" refY="3"
                 orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L7,3 L0,6 Z" fill="{C3}"/></marker>
-        <marker id="ah1" markerWidth="9" markerHeight="9" refX="7" refY="3"
+          <path d="M0,0 L8,3 L0,6 Z" fill="{C3}"/></marker>
+        <marker id="ah1" markerWidth="9" markerHeight="9" refX="8" refY="3"
                 orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L7,3 L0,6 Z" fill="{C1}"/></marker>
-        <marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="3"
+          <path d="M0,0 L8,3 L0,6 Z" fill="{C1}"/></marker>
+        <marker id="ah2" markerWidth="9" markerHeight="9" refX="8" refY="3"
                 orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L7,3 L0,6 Z" fill="{C2}"/></marker>
+          <path d="M0,0 L8,3 L0,6 Z" fill="{C2}"/></marker>
         <linearGradient id="gInk" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="{INK}"/><stop offset="1" stop-color="#1e293b"/>
         </linearGradient>
       </defs>
 
-      <!-- 1. initialization -->
-      {box(SX-130, 18, 260, 52, "url(#gInk)", INK, "Initialization",
-           "households, elevation, network, ties")}
-      {vline(SX, 70, 100)}
-
-      <!-- 2. assign attributes + prior belief -->
-      {box(SX-150, 102, 300, 56, "#f1f5f9", "#cbd5e1",
-           "Assign attributes &amp; prior belief",
-           "risk perception, trusted info, forecast info", tcol=INK)}
-      {vline(SX, 158, 210)}
-
-      <!-- ===== EACH TIME STEP loop box (right edge between Ch2 and Ch3) ===== -->
+      <!-- dashed loop container (behind boxes) -->
       <rect x="40" y="220" width="530" height="410" rx="16" fill="none"
             stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="7 5"/>
       <text x="58" y="244" font-size="12" font-weight="800" fill="{MUT}"
             letter-spacing="0.6">EACH TIME STEP (YEAR)</text>
 
-      <!-- annual flood level -->
-      {box(SX-115, 256, 230, 48, "#e0f2fe", SKY, "Annual flood level",
-           "GEV sample f\u209c", tcol=INK, fs=14)}
+      <!-- boxes -->
+      {box("init", "", INK, "Initialization", "households, elevation, network, ties", grad=True)}
+      {box("assign", "#f1f5f9", "#cbd5e1", "Assign attributes &amp; prior belief", "risk perception, trusted info, forecast info", tcol=INK)}
+      {box("flood", "#e0f2fe", SKY, "Annual flood level", "GEV sample f\u209c", tcol=INK, fs=14)}
+      {box("ch1", C1, "#0369a1", "Channel 1", "Flood experience", "\u03bb_flood \u00d7 \u03bb_risk_perc", fs=14)}
+      {box("ch2", C2, "#15803d", "Channel 2", "Proximity", "\u03bb_social \u00d7 \u03bb_sim", fs=14)}
+      {box("ch3", C3, "#c2610c", "Channel 3", "Information (t=0)", "\u03bb_info \u00d7 \u03bb_response", fs=14)}
+      {box("belief", "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)", "posterior odds = prior odds \u00d7 Bayes factors", tcol=INK, fs=13.5)}
+      {box("retrofit", "#dcfce7", GRN, "Retrofit  (absorbing)", "household leaves the risk pool permanently", tcol=INK, fs=14)}
+      {box("outputs", "#eef2f7", "#cbd5e1", "Model outputs", "adoption curve, survey comparison", tcol=INK, fs=12.5)}
 
-      <!-- channel row: y = 356..432 ; Ch1 & Ch2 inside, Ch3 outside right -->
-      {box(70, 356, 180, 76, C1, "#0369a1", "Channel 1",
-           "Flood experience", "\u03bb_flood \u00d7 \u03bb_risk_perc", fs=14)}
-      {box(300, 356, 180, 76, C2, "#15803d", "Channel 2",
-           "Proximity", "\u03bb_social \u00d7 \u03bb_sim", fs=14)}
-      {box(620, 356, 190, 76, C3, "#c2610c", "Channel 3",
-           "Information (t=0)", "\u03bb_info \u00d7 \u03bb_forecast", fs=14)}
+      <!-- decision diamond -->
+      <polygon points="{DCX},{DCY-DHH} {DCX+DHW},{DCY} {DCX},{DCY+DHH} {DCX-DHW},{DCY}"
+               fill="#fff7ed" stroke="{C3}" stroke-width="1.6"/>
+      {lbl(DCX, DCY-4, "P(H\u2081) \u2265 \u03b8 ?", INK, size=14)}
+      {lbl(DCX, DCY+15, "PMT threshold", MUT, weight="500", size=11.5)}
 
-      <!-- flood level feeds Channel 1 and Channel 2 (clean split) -->
-      {path([(SX,306),(160,306),(160,354)], C1, marker="ah1")}
-      {path([(SX,306),(390,306),(390,354)], C2, marker="ah2")}
-      {lbl(160, 340, "if flooded", C1, size=13, italic=True)}
-      {lbl(478, 340, "if a neighbour", C2, size=13, italic=True)}
-      {lbl(478, 355, "retrofits", C2, size=13, italic=True)}
-
-      <!-- Channel 3 fed once from the prior belief (routed down the right) -->
-      {path([(SX+152,130),(715,130),(715,354)], C3, dash="6 4", marker="aho")}
-      {lbl(712, 120, "once, at t=0", C3, size=13, anchor="end")}
-
-      <!-- all three channels converge on 'update belief' -->
-      {path([(160,434),(160,464),(SX-46,464),(SX-46,485)], C1, marker="ah1")}
-      {path([(390,434),(390,464),(SX+46,464),(SX+46,485)], C2, marker="ah2")}
-      {path([(715,434),(715,512),(SX+117,512)], C3, marker="aho")}
-
-      <!-- update belief -->
-      {box(SX-115, 488, 230, 48, "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)",
-           "posterior odds = prior odds \u00d7 Bayes factors", tcol=INK, fs=13.5)}
-      {vline(SX, 536, 564)}
-
-      <!-- decision diamond (inside loop) -->
-      <polygon points="{SX},566 {SX+115},602 {SX},638 {SX-115},602" fill="#fff7ed"
-               stroke="{C3}" stroke-width="1.6"/>
-      {lbl(SX, 598, "P(H\u2081) \u2265 \u03b8 ?", INK, size=14)}
-      {lbl(SX, 617, "PMT threshold", MUT, weight="500", size=11.5)}
-
-      <!-- NO: loop back up to the flood-level box (routed on the far left) -->
-      {path([(SX-117,602),(25,602),(25,280),(SX-117,280)])}
-      {lbl(105, 592, "no", MUT, size=13)}
+      <!-- ===== ARROWS (each anchored to an edge-centre port) ===== -->
+      {arrow([port("init","bottom"), port("assign","top")])}
+      {arrow([port("assign","bottom"), port("flood","top")])}
+      {arrow(elbow_v(port("flood","bottom"), port("ch1","top"), 330), C1, marker="ah1")}
+      {arrow(elbow_v(port("flood","bottom"), port("ch2","top"), 330), C2, marker="ah2")}
+      {lbl(port("ch1","top")[0], 348, "if flooded", C1, size=13, italic=True)}
+      {lbl(540, 342, "if a neighbour", C2, size=13, italic=True)}
+      {lbl(540, 357, "retrofits", C2, size=13, italic=True)}
+      {arrow([port("assign","right"), (715, port("assign","right")[1]), (715, port("ch3","top")[1])], C3, dash="6 4", marker="aho")}
+      {lbl(712, 118, "once, at t=0", C3, size=13, anchor="end")}
+      {arrow(elbow_v(port("ch1","bottom"), port("belief","top"), 462), C1, marker="ah1")}
+      {arrow(elbow_v(port("ch2","bottom"), port("belief","top"), 462), C2, marker="ah2")}
+      {arrow([port("ch3","bottom"), (port("ch3","bottom")[0], port("belief","right")[1]), port("belief","right")], C3, marker="aho")}
+      {arrow([port("belief","bottom"), dia_port("top")])}
+      {arrow([dia_port("left"), (25, dia_port("left")[1]), (25, port("flood","left")[1]), port("flood","left")])}
+      {lbl(dia_port("left")[0]-45, dia_port("left")[1]-8, "no", MUT, size=13)}
       <rect x="6" y="372" width="22" height="150" fill="#ffffff" opacity="0.9"/>
       <text x="20" y="447" text-anchor="middle" font-size="12.5" fill="{MUT}"
             font-style="italic" transform="rotate(-90 20 447)">carry belief to next year</text>
-
-      <!-- YES: down to retrofit (below the loop) -->
-      {path([(SX,638),(SX,667)], GRN, marker="ahg")}
-      {lbl(SX+26, 656, "yes", GRN, size=13, anchor="start")}
-      {box(SX-130, 670, 260, 52, "#dcfce7", GRN, "Retrofit  (absorbing)",
-           "household leaves the risk pool permanently", tcol=INK, fs=14)}
-
-      <!-- outputs note to the right of retrofit -->
-      {path([(SX+132,696),(618,696)], MUT)}
-      {box(620, 670, 200, 52, "#eef2f7", "#cbd5e1", "Model outputs",
-           "adoption curve, survey comparison", tcol=INK, fs=12.5)}
+      {arrow([dia_port("bottom"), port("retrofit","top")], GRN, marker="ahg")}
+      {lbl(dia_port("bottom")[0]+26, dia_port("bottom")[1]+22, "yes", GRN, size=13, anchor="start")}
+      {arrow([port("retrofit","right"), port("outputs","left")])}
     </svg>'''
     return svg
 
 
 def _page_home():
     import streamlit as st
-    import base64
 
     st.markdown("<div style='height:0.3rem;'></div>", unsafe_allow_html=True)
     left, right = st.columns([5, 7], gap="large")
@@ -1791,24 +1789,11 @@ def _page_home():
             "and references are in <b>Documentation</b>.</div>",
             unsafe_allow_html=True)
 
-        # Hand-drawn style arrow pointing to the left navigation rail.
-        # Embedded as a data-URI <img> (Streamlit's markdown strips inline <svg>).
-        arrow_svg = (
-            "<svg viewBox='0 0 230 140' xmlns='http://www.w3.org/2000/svg'>"
-            "<path d='M212,24 C150,8 70,20 44,80' fill='none' stroke='#ef4444' "
-            "stroke-width='8' stroke-linecap='round'/>"
-            "<path d='M44,80 L82,60 M44,80 L66,112' fill='none' stroke='#ef4444' "
-            "stroke-width='8' stroke-linecap='round' stroke-linejoin='round'/>"
-            "</svg>")
-        a64 = base64.b64encode(arrow_svg.encode("utf-8")).decode("ascii")
-        st.markdown(
-            f"<img src='data:image/svg+xml;base64,{a64}' "
-            "style='width:190px;height:auto;margin:0.4rem 0 0 0;'/>",
-            unsafe_allow_html=True)
-
     with right:
-        # Embed the SVG as a base64 data-URI <img>; Streamlit's markdown
-        # sanitiser strips raw inline <svg>, but allows an <img> data URI.
+        # Render the workflow flowchart (SVG) as a base64 data-URI <img>;
+        # Streamlit's markdown sanitiser strips inline <svg> but allows an
+        # <img> with a data URI.
+        import base64
         svg = _workflow_svg()
         b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
         st.markdown(
