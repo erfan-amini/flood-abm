@@ -1089,19 +1089,23 @@ def _fig_belief_evolution(model):
 
 
 def _fig_network(model):
-    """Network with retrofit status; label = personal flood count."""
+    """Network with retrofit status; label = personal flood count.
+    Households with trusted information are ringed dark red (others black)."""
     fig, ax = plt.subplots(figsize=(7, 5.4))
     agents = list(model.agents)
     _draw_edges(ax, model, alpha=0.3)
+    DARK_RED = "#8b0000"
     na = [a for a in agents if not a.is_retrofitted]
     ad = [a for a in agents if a.is_retrofitted]
     if na:
         ax.scatter([a.x for a in na], [a.y for a in na], c="#e2e8f0", s=170,
-                   edgecolor="black", linewidth=0.8, zorder=2)
+                   edgecolor=[DARK_RED if a.has_trusted_info else "black" for a in na],
+                   linewidth=[1.6 if a.has_trusted_info else 0.8 for a in na], zorder=2)
     if ad:
         sc = ax.scatter([a.x for a in ad], [a.y for a in ad],
                         c=[a.retrofit_step for a in ad], cmap="YlGn", s=185,
-                        edgecolor="black", linewidth=0.8, zorder=3,
+                        edgecolor=[DARK_RED if a.has_trusted_info else "black" for a in ad],
+                        linewidth=[1.6 if a.has_trusted_info else 0.8 for a in ad], zorder=3,
                         vmin=1, vmax=max(1, model.current_step))
         fig.colorbar(sc, ax=ax, shrink=0.7).set_label("Retrofit step")
     # number inside each node = that household's personal flood count
@@ -1111,9 +1115,12 @@ def _fig_network(model):
     ax.set(xlabel="x", ylabel="y", xlim=(-0.02, 1.02), ylim=(-0.02, 1.02))
     ax.set_aspect("equal"); ax.grid(alpha=0.3)
     ax.legend(handles=[Patch(facecolor="#e2e8f0", edgecolor="black", label="Not retrofitted"),
-                       Patch(facecolor="#31a354", edgecolor="black", label="Retrofitted")],
+                       Patch(facecolor="#31a354", edgecolor="black", label="Retrofitted"),
+                       Patch(facecolor="white", edgecolor=DARK_RED, linewidth=1.6,
+                             label="Trusted information")],
               loc="upper right", fontsize=8)
-    ax.text(0.0, -0.13, "Number in each node = household\u2019s personal flood count.",
+    ax.text(0.0, -0.13, "Number in each node = household\u2019s personal flood count; "
+            "dark-red ring = trusted information.",
             transform=ax.transAxes, fontsize=7.5, style="italic", color="#64748b")
     fig.tight_layout()
     return fig
