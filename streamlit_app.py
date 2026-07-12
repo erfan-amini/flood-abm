@@ -859,6 +859,16 @@ def _sec(title, subtitle, color):
 def _page_settings():
     import streamlit as st
     D = DEFAULTS
+    S = st.session_state
+    # Persistent shadow store (survives widget garbage-collection across page
+    # navigation) so settings are kept from one run to the next.
+    if "_persist" not in S:
+        S["_persist"] = {}
+    _P = S["_persist"]
+
+    def _sync(key):
+        _P[key] = S[key]
+
     # section accent colors
     C_BELIEF = "#0284c7"   # sky
     C_CH1    = "#0ea5e9"   # flood - sky
@@ -911,10 +921,10 @@ def _page_settings():
             nb("Initial Belief  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
                help="Prior probability that a household retrofits (proxy for judging a retrofit is needed).")
         with bc2:
-            nb("\u03b8 Minimum", "PMT_THRESHOLD_LOW", 0.01, "%.2f", 0.01, 0.99,
+            nb("\u03b8 Minimum", "PMT_THRESHOLD_LOW", 0.01, "%.2f", 0.01, 1.0,
                help="Lower bound of the uniform threshold distribution.")
         with bc3:
-            nb("\u03b8 Maximum", "PMT_THRESHOLD_HIGH", 0.01, "%.2f", 0.01, 0.99,
+            nb("\u03b8 Maximum", "PMT_THRESHOLD_HIGH", 0.01, "%.2f", 0.01, 1.0,
                help="Upper bound of the uniform threshold distribution.")
     else:
         bc1, bc2 = st.columns(2)
@@ -922,7 +932,7 @@ def _page_settings():
             nb("Initial Belief  P(H\u2081)", "INITIAL_BELIEF", 0.01, "%.2f", 0.01, 0.99,
                help="Prior probability that a household retrofits (proxy for judging a retrofit is needed).")
         with bc2:
-            nb("Decision Threshold  \u03b8", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 0.99,
+            nb("Decision Threshold  \u03b8", "PMT_THRESHOLD_MEAN", 0.01, "%.2f", 0.01, 1.0,
                help="Single belief level at which every household acts [14].")
 
     ch1, ch2, ch3 = st.columns(3)
