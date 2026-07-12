@@ -109,7 +109,7 @@ DEFAULTS = dict(
     # depth-damage curve maps the flood depth to a damage fraction D in [0, 1],
     # and lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D grows from 1 (no
     # damage) to LAMBDA_DAMAGE_MAX (total failure at TOTAL_FAILURE_DEPTH).
-    LAMBDA_FLOOD=1.30, LAMBDA_DAMAGE_MAX=1.20,
+    LAMBDA_FLOOD=1.50, LAMBDA_DAMAGE_MAX=1.10,
     TOTAL_FAILURE_DEPTH=0.05,
     # depth-damage curve: (depth, damage_fraction) points, interpolated
     # linearly.  D(0)=0 and D(TOTAL_FAILURE_DEPTH)=1 by construction.
@@ -118,13 +118,13 @@ DEFAULTS = dict(
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_OBSERVATION=2.00, LAMBDA_SIMILARITY=1.10, SIM_THRESHOLD=0.50,
+    LAMBDA_OBSERVATION=1.20, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
     # one-time t=0 informational prior does not by itself push belief over the
     # threshold; tune upward toward the survey anchors as needed.
-    LAMBDA_INFO=1.05, LAMBDA_RESPONSE=1.15,
+    LAMBDA_INFO=1.15, LAMBDA_RESPONSE=1.10,
     P_TRUSTED_INFO=0.48, P_FORECAST_PREP=0.65,
     # PMT threshold
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
@@ -135,7 +135,7 @@ DEFAULTS = dict(
     ENABLE_THRESHOLD_HET=True,
     # Flood (GEV)
     RETURN_PERIODS=[10, 20, 50, 100],
-    FLOOD_LEVELS=[0.1, 0.2, 0.4, 0.6],
+    FLOOD_LEVELS=[0.05, 0.2, 0.4, 0.6],
     # Observed cumulative "at most k" retrofit rates (%)    OBSERVED_CUM_LABELS=["0", "\u22644", "5+"],
     OBSERVED_CUM_RATES=[18.0, 22.3, 27.4],
     OBSERVED_CUM_MAX=[0, 4, np.inf],   # upper flood-count bound for each cumulative bin
@@ -581,7 +581,9 @@ class FloodAdaptationModel(mesa.Model):
                 "neighborhood_id": agent.neighborhood_id,
                 "is_retrofitted": agent.is_retrofitted,
                 "flood_count": agent.flood_count,
-                "retrofit_step": agent.retrofit_step})
+                "retrofit_step": agent.retrofit_step,
+                "has_trusted_info": agent.has_trusted_info,
+                "forecast_prep": agent.forecast_prep})
         n_ret = sum(1 for a in self.agents if a.is_retrofitted)
         self.model_data.append({
             "Step": self.current_step,
@@ -902,6 +904,14 @@ def _page_settings():
                         on_change=_sync, args=(skey,))
         _P[skey] = S[skey]
 
+    def ti(label, key, default_str, help=None):
+        # Persistent text input (survives navigation like nb/ni).
+        skey = f"p_{key}"
+        val = str(_P.get(skey, default_str))
+        st.text_input(label, value=val, key=skey, help=help,
+                      on_change=_sync, args=(skey,))
+        _P[skey] = S[skey]
+
     # ===================== PRIMARY DRIVERS =====================
     st.markdown("### \U0001F3AF Core decision drivers")
 
@@ -964,10 +974,13 @@ def _page_settings():
                 "Survey: weak alone (OR ~1.39).")
         nb("\u03bb_response  (\u00d7 if forecast info)", "LAMBDA_RESPONSE", 0.05, "%.2f", 1.0, None,
            help="Amplifier for agents who take precautionary action based on the forecast data. Survey ~3.2.")
-        nb("Fraction with trusted information", "P_TRUSTED_INFO", 0.01, "%.2f", 0.0, 1.0,
-           help="Survey (never-flooded): 0.48.")
-        nb("Fraction using forecast info", "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
-           help="Survey (never-flooded): 0.65.")
+        fr1, fr2 = st.columns(2)
+        with fr1:
+            nb("Fraction with trusted information", "P_TRUSTED_INFO", 0.01, "%.2f", 0.0, 1.0,
+               help="Survey (never-flooded): 0.48.")
+        with fr2:
+            nb("Fraction using forecast info", "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
+               help="Survey (never-flooded): 0.65.")
 
     # ===================== SECONDARY / STRUCTURAL =====================
     st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
@@ -991,8 +1004,11 @@ def _page_settings():
             ni("Classes per Attribute", "N_CLASSES", 1, 10)
         with s2:
             _sec("Spatial layout", "Neighbourhood grid and terrain.", C_MINOR)
-            ni("Grid Rows", "GRID_ROWS", 1, 10)
-            ni("Grid Cols", "GRID_COLS", 1, 10)
+            gr1, gr2 = st.columns(2)
+            with gr1:
+                ni("Grid Rows", "GRID_ROWS", 1, 10)
+            with gr2:
+                ni("Grid Cols", "GRID_COLS", 1, 10)
             ni("Connectors", "N_CONNECTORS", 0, 10)
             nb("Elevation Noise", "NOISE_FACTOR", 0.01, "%.2f", 0.0, 1.0)
         with s3:
@@ -1005,19 +1021,17 @@ def _page_settings():
         f1, f2 = st.columns(2)
         with f1:
             _sec("Flood (GEV)", "Extreme-value flood sampler inputs.", C_MINOR)
-            st.text_input("Return Periods",
-                          value=", ".join(str(x) for x in D["RETURN_PERIODS"]),
-                          key="p_RETURN_PERIODS",
-                          help="Comma-separated return periods (years).")
+            ti("Return Periods", "RETURN_PERIODS",
+               ", ".join(str(x) for x in D["RETURN_PERIODS"]),
+               help="Comma-separated return periods (years).")
             # Flood levels are the per-return-period coefficients directly (the
             # elevation slope is fixed at 1, so level = coefficient). Defaults
             # for 10/20/50/100-yr are 0.1/0.2/0.4/0.6; edit as needed.
-            st.text_input("Flood Levels",
-                          value=", ".join(str(x) for x in D["FLOOD_LEVELS"]),
-                          key="p_FLOOD_LEVELS",
-                          help="Comma-separated flood levels matching the "
-                               "return periods (elevation slope is fixed at 1, "
-                               "so these are the coefficients directly).")
+            ti("Flood Levels", "FLOOD_LEVELS",
+               ", ".join(str(x) for x in D["FLOOD_LEVELS"]),
+               help="Comma-separated flood levels matching the "
+                    "return periods (elevation slope is fixed at 1, "
+                    "so these are the coefficients directly).")
         with f2:
             _sec("Run controls", "Length and reproducibility of the simulation.", C_MINOR)
             ni("Time Steps", "TIME_STEPS", 10, 10000, 10)
@@ -1270,6 +1284,35 @@ def _page_results():
         st.download_button("Download model data (CSV)",
                            mdf.to_csv(), "model_data.csv", "text/csv",
                            use_container_width=True)
+
+    # ---- full export: everything about the model + all results ----
+    st.markdown("#### \U0001F4E6 Full export")
+    st.caption("One CSV with the model settings and the complete simulation "
+               "record \u2014 every agent at every step, plus the per-step model "
+               "aggregates. Tick the box to build the file, then download.")
+    if st.checkbox("Prepare full model + results CSV", key="prep_full_csv"):
+        import io as _io, datetime as _dt
+        adf = st.session_state["agent_df"].reset_index()
+        m_df = mdf.reset_index()
+        buf = _io.StringIO()
+        # 1) run settings (parameters)
+        buf.write("# FLOOD MITIGATION ABM \u2014 FULL EXPORT\n")
+        buf.write(f"# generated,{_dt.datetime.now().isoformat(timespec='seconds')}\n")
+        buf.write("\n# === MODEL SETTINGS ===\n")
+        buf.write("parameter,value\n")
+        for k, v in p.items():
+            sval = str(v).replace("\n", " ").replace(",", ";")
+            buf.write(f"{k},{sval}\n")
+        # 2) per-step model aggregates
+        buf.write("\n# === MODEL RESULTS (per step) ===\n")
+        m_df.to_csv(buf, index=False)
+        # 3) per-agent per-step record
+        buf.write("\n# === AGENT RESULTS (every agent, every step) ===\n")
+        adf.to_csv(buf, index=False)
+        fname = "FM-ABM-_" + _dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".csv"
+        st.download_button("\u2b07\ufe0f Download full CSV", buf.getvalue(), fname,
+                           "text/csv", use_container_width=True,
+                           key="dl_full_csv")
 
 
 def _page_documentation():
