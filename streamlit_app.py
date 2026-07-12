@@ -16,11 +16,12 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
 
   1. Personal flood experience
        base:       lambda_flood        (one factor per flood; Good, 1950)
-       multiplier: lambda_risk_perception  active for agents who expect
-                   rising flood damage (risk-perception appraisal, a
-                   forward-looking threat appraisal in the sense of
-                   Rogers, 1975; Floyd, Prentice-Dunn & Rogers, 2000).
-                   = 1 otherwise.
+       multiplier: lambda_damage       scales with flood depth at the house:
+                   lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D, where the
+                   damage fraction D in [0, 1] is read from a depth-damage
+                   curve (interp of user-supplied (depth, damage) points).
+                   D = 0 (no damage) gives multiplier 1; D = 1 (total failure
+                   at TOTAL_FAILURE_DEPTH) gives LAMBDA_DAMAGE_MAX.
        Fires only in a flood year (flood_level > z). Availability heuristic:
        safe years produce no update (Tversky & Kahneman, 1974).
 
@@ -44,9 +45,10 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
 
 Survey-anchored defaults (NYC Flood Vulnerability Survey, cleaned):
   lambda_flood      1.52  (owner per-flood odds ratio)
-  lambda_risk_perception  2.40  (expecting- vs not-expecting rising damage)
+  lambda_damage_max 1.20  (cap of the depth-driven damage multiplier)
+  total_failure_depth 0.05  (depth at which damage is total, D = 1)
   lambda_response   3.20  (precautionary-action-on-forecast odds ratio)
-  P(expects rising damage) 0.69 ; P(trusted info) 0.48 ; P(forecast prep) 0.65
+  P(trusted info) 0.48 ; P(forecast prep) 0.65
   Cumulative "at most k" retrofit targets: 18.0 / 22.3 / 27.4 %
 
 References
@@ -99,12 +101,18 @@ DEFAULTS = dict(
     # survey point-estimates (e.g. b0 ~ 0.23) assume the other channels held
     # at baseline, so they cannot all be defaults at once without saturating.
     INITIAL_BELIEF=0.08,
-    # Channel 1 - experience.  Survey anchors: LAMBDA_FLOOD 1.52 (owner per-flood
-    # odds ratio), LAMBDA_RISK_PERCEPTION 2.40 (expecting vs not-expecting rising
-    # damage).  Opened slightly de-escalated so the model is non-saturated out
-    # of the box; tune upward toward the anchors and watch the cumulative bars.
-    LAMBDA_FLOOD=1.52, LAMBDA_RISK_PERCEPTION=1.60,
-    P_EXPECT_RISING_DAMAGE=0.69,
+    # Channel 1 - experience.  Survey anchor: LAMBDA_FLOOD 1.52 (owner per-flood
+    # odds ratio).  On a flood, the base factor is amplified by a DAMAGE
+    # multiplier that scales with how deep the flood is at the house: a
+    # depth-damage curve maps the flood depth to a damage fraction D in [0, 1],
+    # and lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D grows from 1 (no
+    # damage) to LAMBDA_DAMAGE_MAX (total failure at TOTAL_FAILURE_DEPTH).
+    LAMBDA_FLOOD=1.52, LAMBDA_DAMAGE_MAX=1.20,
+    TOTAL_FAILURE_DEPTH=0.05,
+    # depth-damage curve: (depth, damage_fraction) points, interpolated
+    # linearly.  D(0)=0 and D(TOTAL_FAILURE_DEPTH)=1 by construction.
+    DEPTH_DAMAGE_CURVE=[(0.0, 0.0), (0.0125, 0.40), (0.025, 0.70),
+                        (0.0375, 0.90), (0.05, 1.0)],
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
@@ -142,6 +150,17 @@ def bayesian_update(belief, bayes_factor):
     odds = belief / (1.0 - belief)
     odds *= bayes_factor
     return odds / (1.0 + odds)
+
+
+def damage_fraction(depth, curve, total_failure_depth):
+    """Damage fraction D in [0, 1] for a flood of the given depth, read from
+    the depth-damage curve (a list of (depth, damage) points, interpolated
+    linearly).  Depth is clipped to [0, total_failure_depth] first, so depths
+    at or beyond total failure return D = 1."""
+    d = min(max(depth, 0.0), total_failure_depth)
+    xs = [p[0] for p in curve]
+    ys = [p[1] for p in curve]
+    return float(np.interp(d, xs, ys))
 
 
 # ============================================================================
@@ -370,7 +389,7 @@ class HouseholdAgent(mesa.Agent):
 
     def __init__(self, model, x, y, z, attributes, initial_belief,
                  pmt_threshold, neighborhood_id,
-                 expects_rising_damage, has_trusted_info, forecast_prep):
+                 has_trusted_info, forecast_prep):
         super().__init__(model)
         self.x = x
         self.y = y
@@ -383,7 +402,6 @@ class HouseholdAgent(mesa.Agent):
         self.flood_count = 0
         self.attributes = attributes
         # static household traits (assigned once at t=0, never changed)
-        self.expects_rising_damage = expects_rising_damage
         self.has_trusted_info = has_trusted_info
         self.forecast_prep = forecast_prep
         self.observed_retrofitted = set()
@@ -392,17 +410,21 @@ class HouseholdAgent(mesa.Agent):
     def experience_flood(self, flood_level):
         """
         Fires only in a flood year (flood_level > z). Base per-flood factor
-        lambda_flood, times the risk-perception multiplier
-        lambda_risk_perception for agents who expect rising flood damage
-        (= 1 otherwise).
+        lambda_flood, times a DAMAGE multiplier that scales with the flood
+        depth at the house: lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D,
+        where D in [0, 1] is the damage fraction read from the depth-damage
+        curve. A shallow flood gives lambda_damage near 1; a flood at or
+        beyond total-failure depth gives LAMBDA_DAMAGE_MAX.
         """
         if self.is_retrofitted:
             return False
         if flood_level > self.z:
             self.flood_count += 1
             m = self.model
-            mult = m.LAMBDA_RISK_PERCEPTION if self.expects_rising_damage else 1.0
-            self.belief = bayesian_update(self.belief, m.LAMBDA_FLOOD * mult)
+            depth = flood_level - self.z
+            D = damage_fraction(depth, m.DEPTH_DAMAGE_CURVE, m.TOTAL_FAILURE_DEPTH)
+            lambda_damage = 1.0 + (m.LAMBDA_DAMAGE_MAX - 1.0) * D
+            self.belief = bayesian_update(self.belief, m.LAMBDA_FLOOD * lambda_damage)
             return True
         return False
 
@@ -514,7 +536,6 @@ class FloodAdaptationModel(mesa.Model):
         self.grid = NetworkGrid(self.G)
 
         # static trait draws (independent Bernoulli, survey-anchored fractions)
-        exp_flags = self.rng.random(self.n_agents) < self.P_EXPECT_RISING_DAMAGE
         info_flags = self.rng.random(self.n_agents) < self.P_TRUSTED_INFO
         fc_flags = self.rng.random(self.n_agents) < self.P_FORECAST_PREP
 
@@ -531,7 +552,6 @@ class FloodAdaptationModel(mesa.Model):
                 z=self.elevations[i], attributes=self.attributes[i],
                 initial_belief=self.INITIAL_BELIEF, pmt_threshold=thr,
                 neighborhood_id=int(self.neighborhood_labels[i]),
-                expects_rising_damage=bool(exp_flags[i]),
                 has_trusted_info=bool(info_flags[i]),
                 forecast_prep=bool(fc_flags[i]))
             self.grid.place_agent(agent, i)
@@ -743,6 +763,18 @@ def _check_password():
     return False
 
 
+def _read_curve(session, default):
+    """Read the edited depth-damage table (a DataFrame from st.data_editor)
+    into a sorted list of (depth, damage) tuples."""
+    import pandas as pd
+    cur = session.get("p_DEPTH_DAMAGE_CURVE", None)
+    if cur is None:
+        return default
+    df = cur if isinstance(cur, pd.DataFrame) else pd.DataFrame(cur)
+    df = df.dropna().sort_values("depth")
+    return [(float(r.depth), float(r.damage)) for r in df.itertuples()]
+
+
 def _collect_params():
     """Read every parameter box (Settings page) into a params dict."""
     import streamlit as st
@@ -768,8 +800,9 @@ def _collect_params():
         DBSCAN_MIN_SAMPLES=int(g("DBSCAN_MIN_SAMPLES", D["DBSCAN_MIN_SAMPLES"])),
         INITIAL_BELIEF=g("INITIAL_BELIEF", D["INITIAL_BELIEF"]),
         LAMBDA_FLOOD=g("LAMBDA_FLOOD", D["LAMBDA_FLOOD"]),
-        LAMBDA_RISK_PERCEPTION=g("LAMBDA_RISK_PERCEPTION", D["LAMBDA_RISK_PERCEPTION"]),
-        P_EXPECT_RISING_DAMAGE=g("P_EXPECT_RISING_DAMAGE", D["P_EXPECT_RISING_DAMAGE"]),
+        LAMBDA_DAMAGE_MAX=g("LAMBDA_DAMAGE_MAX", D["LAMBDA_DAMAGE_MAX"]),
+        TOTAL_FAILURE_DEPTH=g("TOTAL_FAILURE_DEPTH", D["TOTAL_FAILURE_DEPTH"]),
+        DEPTH_DAMAGE_CURVE=_read_curve(S, D["DEPTH_DAMAGE_CURVE"]),
         LAMBDA_SOCIAL=g("LAMBDA_SOCIAL", D["LAMBDA_SOCIAL"]),
         LAMBDA_SIMILARITY=g("LAMBDA_SIMILARITY", D["LAMBDA_SIMILARITY"]),
         SIM_THRESHOLD=g("SIM_THRESHOLD", D["SIM_THRESHOLD"]),
@@ -882,14 +915,15 @@ def _page_settings():
     ch1, ch2, ch3 = st.columns(3)
     with ch1:
         _sec("Channel 1 \u00b7 Flood Experience",
-             "Belief update per flood, amplified by expecting rising risk.", C_CH1)
+             "Belief update per flood, amplified by how deep the flood is.", C_CH1)
         nb("\u03bb_flood  (base, per flood)", "LAMBDA_FLOOD", 0.01, "%.2f", 1.0, None,
            help="Bayes factor per flood. Survey anchor 1.52.")
-        nb("\u03bb_risk_perception  (\u00d7 rising damage)", "LAMBDA_RISK_PERCEPTION", 0.1, "%.2f", 1.0, None,
-           help="Risk-perception multiplier on a flood, for agents expecting "
-                "rising flood damage. Survey anchor 2.40 [14].")
-        nb("Fraction expecting rising damage", "P_EXPECT_RISING_DAMAGE",
-           0.01, "%.2f", 0.0, 1.0, help="Assigned once at t=0. Survey: 0.69.")
+        nb("\u03bb_damage max  (cap)", "LAMBDA_DAMAGE_MAX", 0.05, "%.2f", 1.0, None,
+           help="Maximum damage multiplier, reached at total-failure depth. "
+                "\u03bb_damage = 1 + (max\u22121)\u00d7D, D = damage fraction.")
+        nb("Total-failure depth", "TOTAL_FAILURE_DEPTH", 0.005, "%.3f", 0.001, None,
+           help="Flood depth at which damage is total (D=1). Depth is "
+                "flood level minus house elevation.")
     with ch2:
         _sec("Channel 2 \u00b7 Proximity",
              "Social learning from retrofitted neighbours, stronger if similar.", C_CH2)
@@ -912,6 +946,31 @@ def _page_settings():
            help="Survey (never-flooded): 0.48.")
         nb("Fraction using forecast info", "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
            help="Survey (never-flooded): 0.65.")
+
+    # ---- depth-damage curve (drives Channel 1's damage multiplier) ----
+    st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
+    _sec("Depth\u2013damage function",
+         "Maps each flood depth to a damage fraction D \u2208 [0, 1]. On a flood, "
+         "\u03bb_damage = 1 + (\u03bb_damage max \u2212 1) \u00d7 D, so deeper floods move belief "
+         "more. Edit the points below; values are interpolated linearly.", C_CH1)
+    import pandas as _pd
+    dd1, dd2 = st.columns([3, 4])
+    with dd1:
+        default_curve = _pd.DataFrame(D["DEPTH_DAMAGE_CURVE"],
+                                      columns=["depth", "damage"])
+        st.data_editor(default_curve, key="p_DEPTH_DAMAGE_CURVE",
+                       num_rows="dynamic", width="stretch",
+                       column_config={
+                           "depth": st.column_config.NumberColumn(
+                               "Flood depth", step=0.005, format="%.3f"),
+                           "damage": st.column_config.NumberColumn(
+                               "Damage fraction", min_value=0.0, max_value=1.0,
+                               step=0.05, format="%.2f")})
+    with dd2:
+        cur = st.session_state.get("p_DEPTH_DAMAGE_CURVE", default_curve)
+        cur = cur if isinstance(cur, _pd.DataFrame) else _pd.DataFrame(cur)
+        st.caption("Damage fraction vs flood depth")
+        st.line_chart(cur.set_index("depth")["damage"], height=190)
 
     # ===================== SECONDARY / STRUCTURAL =====================
     st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
@@ -1125,7 +1184,7 @@ def _config_chips(p):
         ("Agents", p["N_AGENTS"]), ("Steps", p["TIME_STEPS"]),
         ("P(H\u2081)", f"{p['INITIAL_BELIEF']:.2f}"),
         ("\u03b8", f"{p['PMT_THRESHOLD_MEAN']:.2f}"),
-        ("\u03bb_flood\u00d7\u03bb_riskperc", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_RISK_PERCEPTION']:.2f}"),
+        ("\u03bb_flood\u00d7\u03bb_dmg", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_DAMAGE_MAX']:.2f}"),
         ("\u03bb_social\u00d7\u03bb_sim", f"{p['LAMBDA_SOCIAL']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
         ("\u03bb_info\u00d7\u03bb_resp", f"{p['LAMBDA_INFO']:.2f}\u00d7{p['LAMBDA_RESPONSE']:.2f}"),
         ("Seed", p["RANDOM_SEED"]),
@@ -1273,16 +1332,18 @@ def _page_documentation():
                 "a trusted information source ($\\lambda_{info}=1.05$) who also "
                 "takes precautionary action on the forecast "
                 "($\\lambda_{response}=1.15$) then "
-                "experiences two floods, and expects rising damage "
-                "($\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,perc}}=1.60$). The "
+                "experiences two floods, each about half the total-failure "
+                "depth so the damage fraction is $D\\approx0.70$ and "
+                "$\\lambda_{damage}=1+(1.20-1)\\times0.70\\approx1.14$ "
+                "($\\lambda_{flood}=1.52$). The "
                 "information channel fires once at $t=0$ and each flood fires "
                 "when it occurs:")
     st.latex(r"O_{\text{final}} = 0.087 \times "
              r"\underbrace{(1.05\times1.15)}_{\text{information}} \times "
-             r"\underbrace{(1.52\times1.60)}_{\text{flood 1}} \times "
-             r"\underbrace{(1.52\times1.60)}_{\text{flood 2}} = 0.62")
-    st.markdown("Converting back, $P_{\\text{final}}(H_1) = 0.62/(1+0.62) = "
-                "0.38$. Belief has risen from 0.08 to 0.38 \u2014 still below a "
+             r"\underbrace{(1.52\times1.14)}_{\text{flood 1}} \times "
+             r"\underbrace{(1.52\times1.14)}_{\text{flood 2}} = 0.32")
+    st.markdown("Converting back, $P_{\\text{final}}(H_1) = 0.32/(1+0.32) = "
+                "0.24$. Belief has risen from 0.08 to 0.24 \u2014 still below a "
                 "threshold of $\\theta=0.85$, so this household would not yet "
                 "retrofit. It illustrates why several strong signals are "
                 "typically needed to cross the bar, matching the low observed "
@@ -1303,22 +1364,32 @@ def _page_documentation():
         "asymmetric \u2014 flood years are psychologically salient while dry years "
         "are cognitively inert (availability heuristic [15]). "
         "On a flood, the base per-flood factor $\\lambda_{flood}$ is "
-        "multiplied by a **risk-perception** multiplier $\\lambda_{\\mathrm{risk\\,perc}}$ "
-        "for households that expect flood damage to worsen [14], "
-        "[4]:")
+        "multiplied by a **damage** multiplier that scales with how deep the "
+        "flood is at the house. The flood depth is $\\delta_i = f_t - z_i$, and "
+        "a **depth\u2013damage function** $D(\\delta)\\in[0,1]$ maps that depth to a "
+        "damage fraction (0 = no damage, 1 = total failure at "
+        "$\\delta_{\\text{fail}}$):")
     st.latex(r"""\lambda_{\text{exp},i}^{(t)} =
 \begin{cases}
-\lambda_{flood}\cdot\lambda_{\mathrm{risk\,perc}} & f_t > z_i \ \text{and agent expects rising damage}\\
-\lambda_{flood} & f_t > z_i \ \text{and agent does not}\\
+\lambda_{flood}\cdot\big(1+(\lambda_{damage}^{\max}-1)\,D(\delta_i)\big) & f_t > z_i\\[2pt]
 1 & f_t \le z_i \quad(\text{not flooded; no update})
 \end{cases}""")
-    st.markdown("A single per-flood factor is used (no separate first-flood "
-                "term). Survey anchors: $\\lambda_{flood}=1.52$ (owner per-flood "
-                "odds ratio) and $\\lambda_{\\mathrm{risk\\,perc}}=2.40$ (expecting- vs "
-                "not-expecting rising damage). Because each flood contributes "
-                "only a modest factor, an agent must experience several floods "
-                "before belief nears the threshold \u2014 consistent with observed "
-                "low adoption despite repeated flooding.")
+    st.latex(r"D(\delta) = \text{interp}\big(\min(\delta,\ \delta_{\text{fail}});\ "
+             r"\text{depth\text{-}damage curve}\big),\qquad "
+             r"\lambda_{damage}\in[1,\ \lambda_{damage}^{\max}]")
+    st.markdown(
+        "So a shallow flood ($D\\to0$) gives $\\lambda_{damage}\\to1$ (the base "
+        "$\\lambda_{flood}$ alone), while a flood at or beyond the "
+        "total-failure depth ($D=1$) gives the full $\\lambda_{damage}^{\\max}$. "
+        "The depth\u2013damage curve is a user-supplied table of "
+        "$(\\text{depth},\\ \\text{damage})$ points, interpolated linearly \u2014 "
+        "the standard vulnerability curve of flood-risk analysis [1], [13]. A "
+        "single per-flood base factor is used (no separate first-flood term); "
+        "the survey anchor is $\\lambda_{flood}=1.52$ (owner per-flood odds "
+        "ratio). Because each flood contributes only a modest factor, an agent "
+        "must experience several \u2014 or a few severe \u2014 floods before belief "
+        "nears the threshold, consistent with observed low adoption despite "
+        "repeated flooding.")
 
     st.markdown("#### 3.4 &nbsp; Channel 2: proximity-based social learning")
     st.markdown(
@@ -1380,11 +1451,13 @@ def _page_documentation():
     st.markdown('<div class="doc-h">4 &nbsp; Static household traits</div>',
                 unsafe_allow_html=True)
     st.markdown(
-        "Three binary traits gate the conditional multipliers above: *expects "
-        "rising damage*, *has trusted information*, and *prepares on forecasts*. "
-        "Each is drawn once at $t=0$ as an independent Bernoulli variable using "
-        "survey-anchored fractions among never-flooded households \u2014 0.69, 0.48, "
-        "and 0.65 respectively \u2014 and is fixed for the life of the simulation.")
+        "Two binary traits gate the conditional multipliers on the information "
+        "channel: *has trusted information* and *takes precautionary action on "
+        "forecasts*. Each is drawn once at $t=0$ as an independent Bernoulli "
+        "variable using survey-anchored fractions among never-flooded "
+        "households \u2014 0.48 and 0.65 respectively \u2014 and is fixed for the life of "
+        "the simulation. The flood-experience channel needs no such trait: its "
+        "damage multiplier is computed directly from each flood's depth.")
 
     # ---- 5 Decision rule ----
     st.markdown('<div class="doc-h">5 &nbsp; Decision rule (PMT threshold)</div>',
@@ -1407,9 +1480,11 @@ def _page_documentation():
                 unsafe_allow_html=True)
     st.markdown(
         "A Bayes factor greater than 1 is evidence for retrofitting and "
-        "multiplies the odds. Two floods contribute $\\lambda_{flood}^2$; a "
-        "flood experienced by a household expecting rising damage contributes "
-        "$\\lambda_{flood}\\,\\lambda_{\\mathrm{risk\\,perc}}$. Working in odds means these "
+        "multiplies the odds. Two shallow floods contribute about "
+        "$\\lambda_{flood}^2$; a deep flood contributes "
+        "$\\lambda_{flood}\\,\\lambda_{damage}$ with $\\lambda_{damage}$ rising "
+        "toward $\\lambda_{damage}^{\\max}$ as the depth approaches total "
+        "failure. Working in odds means these "
         "combine by multiplication and the update is order-independent \u2014 the "
         "same evidence yields the same belief regardless of the order in which "
         "it arrives [5].")
@@ -1436,8 +1511,10 @@ def _page_documentation():
         "All parameters live on the **Settings** page, grouped into core "
         "decision drivers (belief, the three channels, the threshold) and "
         "structural environment settings. Survey-anchored starting values: "
-        "$\\lambda_{flood}=1.52$, $\\lambda_{\\mathrm{risk\\,perc}}=2.40$, "
-        "$\\lambda_{response}\\approx3.2$; trait fractions 0.69 / 0.48 / 0.65. "
+        "$\\lambda_{flood}=1.52$, $\\lambda_{response}\\approx3.2$; information "
+        "trait fractions 0.48 / 0.65. The flood-experience severity is set by "
+        "$\\lambda_{damage}^{\\max}$ (default 1.20), the total-failure depth "
+        "(default 0.05), and the depth\u2013damage curve, rather than by a trait. "
         "The opening defaults are deliberately de-escalated from these raw "
         "point estimates so the model is non-saturated out of the box: each "
         "survey odds ratio was estimated holding the other channels at "
@@ -1490,9 +1567,10 @@ def _page_documentation():
         "zero floods to 27% among the most-flooded), while never-flooded "
         "households retrofit at low rates \u2014 evidence against social contagion "
         "as the primary mechanism.\n"
-        "- **Risk perception matters.** Households expecting rising flood "
-        "damage retrofit more, motivating the $\\lambda_{\\mathrm{risk\\,perc}}$ multiplier "
-        "on the experience channel.\n"
+        "- **Flood severity matters, not just frequency.** Deeper, more "
+        "damaging floods drive stronger protective responses, motivating the "
+        "depth-driven $\\lambda_{damage}$ multiplier on the experience channel: "
+        "each flood's effect scales with the damage its depth implies.\n"
         "- **Trusted information and precautionary action raise adoption.** "
         "Households with a trusted information source (35% vs 21%) and those "
         "taking precautionary action based on the forecast data (31% vs 17%) "
@@ -1532,15 +1610,21 @@ def _page_documentation():
         "**Research mode** generates a synthetic settlement: household "
         "positions on a connected grid, elevations from a linear coastal "
         "gradient with noise, and annual floods sampled from a GEV distribution "
-        "fitted to the return periods and levels on the Settings page. Use it "
+        "fitted to the return periods and levels on the Settings page. It also "
+        "uses the **depth\u2013damage function** on the Settings page to convert "
+        "each flood's depth into the damage that drives the experience "
+        "channel's $\\lambda_{damage}$ multiplier. Use it "
         "for controlled experiments and sensitivity analysis.\n\n"
         "**Case-study mode** replaces the synthetic setting with real data: "
         "upload a **location CSV** (columns `x, y, z` \u2014 one row per household, "
         "giving position and elevation) and a **flood-series CSV** (column "
-        "`flood_level` \u2014 one value per time step, replayed in order). The agent "
-        "count is taken from the location file; every behavioural parameter "
-        "still comes from the Settings page, so the same calibrated mechanism "
-        "can be driven by an observed landscape and flood history.")
+        "`flood_level` \u2014 one value per time step, replayed in order). You may "
+        "also upload an optional **depth\u2013damage CSV** (columns `depth`, "
+        "`damage`) to give this case study its own vulnerability curve; if "
+        "omitted, the Settings-page curve is used. The agent "
+        "count is taken from the location file; every other behavioural "
+        "parameter still comes from the Settings page, so the same calibrated "
+        "mechanism can be driven by an observed landscape and flood history.")
 
     # ---- 15 References ----
     st.markdown('<div class="doc-h">15 &nbsp; References</div>', unsafe_allow_html=True)
@@ -1716,9 +1800,9 @@ def _workflow_svg():
 
       <!-- boxes -->
       {box("init", "", INK, "Initialization", "households, elevation, network, ties", grad=True)}
-      {box("assign", "#f1f5f9", "#cbd5e1", "Assign attributes &amp; prior belief", "risk perception, trusted info, forecast info", tcol=INK)}
+      {box("assign", "#f1f5f9", "#cbd5e1", "Assign attributes &amp; prior belief", "attributes, elevation, trusted info, forecast info", tcol=INK)}
       {box("flood", "#e0f2fe", SKY, "Annual flood level", "GEV sample f\u209c", tcol=INK, fs=14)}
-      {box("ch1", C1, "#0369a1", "Channel 1", "Flood experience", "\u03bb_flood \u00d7 \u03bb_risk_perc", fs=14)}
+      {box("ch1", C1, "#0369a1", "Channel 1", "Flood experience", "\u03bb_flood \u00d7 \u03bb_damage", fs=14)}
       {box("ch2", C2, "#15803d", "Channel 2", "Proximity", "\u03bb_social \u00d7 \u03bb_sim", fs=14)}
       {box("ch3", C3, "#c2610c", "Channel 3", "Information (t=0)", "\u03bb_info \u00d7 \u03bb_response", fs=14)}
       {box("belief", "#f8fafc", "#cbd5e1", "Update belief P(H\u2081)", "posterior odds = prior odds \u00d7 Bayes factors", tcol=INK, fs=13.5)}
@@ -1870,7 +1954,7 @@ def _run_app():
             ss["mode"] = "Case Study"; st.rerun()
 
         # ---- Case Study uploads (only in Case Study Mode) ----
-        uploaded_csv = uploaded_flood = None
+        uploaded_csv = uploaded_flood = uploaded_curve = None
         if ss["mode"] == "Case Study":
             st.markdown('<div class="rail-label">Upload data</div>',
                         unsafe_allow_html=True)
@@ -1879,6 +1963,12 @@ def _run_app():
             uploaded_flood = st.file_uploader("Flood series CSV",
                                               type=["csv"], key="flood_upl",
                                               help="Column 'flood_level', one value per step.")
+            uploaded_curve = st.file_uploader("Depth\u2013damage CSV (optional)",
+                                              type=["csv"], key="curve_upl",
+                                              help="Columns 'depth', 'damage'. "
+                                                   "Overrides the Settings-page "
+                                                   "curve; if omitted, that curve "
+                                                   "is used.")
 
         st.markdown('<hr/>', unsafe_allow_html=True)
 
@@ -1921,6 +2011,17 @@ def _run_app():
                     st.error("Flood series CSV needs a 'flood_level' column.")
                     st.stop()
                 params["CUSTOM_FLOOD_SERIES"] = fdf["flood_level"].to_numpy(float)
+                # Optional depth-damage curve: overrides the Settings-page curve.
+                if uploaded_curve is not None:
+                    uploaded_curve.seek(0)
+                    ddf = pd.read_csv(uploaded_curve)
+                    if {"depth", "damage"} - set(ddf.columns):
+                        st.error("Depth\u2013damage CSV needs 'depth' and "
+                                 "'damage' columns.")
+                        st.stop()
+                    ddf = ddf.dropna().sort_values("depth")
+                    params["DEPTH_DAMAGE_CURVE"] = [
+                        (float(r.depth), float(r.damage)) for r in ddf.itertuples()]
 
             model = _run_with_progress(params, progress_slot)
             ss["model_obj"] = model
