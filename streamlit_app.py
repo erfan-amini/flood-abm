@@ -432,6 +432,15 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
         n_here = base + (1 if nh_idx in extra_idx else 0)
         return max(0, -(-n_here // nh_cols) - 1)   # ceil division
 
+    def top_row_cols(nh_idx):
+        # occupied columns in the block's top filled row (a partial top row may
+        # not span all columns; lower rows are always full).
+        n_here = base + (1 if nh_idx in extra_idx else 0)
+        full = n_here % nh_cols
+        return nh_cols if full == 0 else full
+
+    mid_col = (nh_cols - 1) // 2
+
     # Horizontal connectors: centred VERTICALLY (the middle filled row) and
     # stepped right from the block edge. Each hop is one node spacing s, so the
     # connector is s from the block on the left and s from the block on the
@@ -448,20 +457,25 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
             my = loy + r * s
             for c in range(n_connectors):
                 coords.append([rex + (c + 1) * s, my])
-    # Vertical connectors: placed on the LEFT column (col 0, always filled) and
-    # spaced EQUIDISTANTLY between the lower block's top node and the upper
-    # block's bottom node -- so the connector is the same distance from the
-    # agent below and the agent above. With rows pitched by the filled height
-    # that distance equals the normal node spacing s.
+    # Vertical connectors: centred HORIZONTALLY at the true middle of the
+    # neighbourhood (the midpoint of its occupied columns, which for an even
+    # column count falls between two nodes -- still within one spacing of both,
+    # so it stays connected). Spaced EQUIDISTANTLY between the lower block's top
+    # node and the upper block's bottom node.
     for gr in range(grid_rows - 1):
         for gc in range(grid_cols):
             box = margin_x + gc * col_pitch
-            lower_top = margin_y + gr * row_pitch + top_filled_row(gr * grid_cols + gc) * s
+            lower_idx = gr * grid_cols + gc
+            # occupied columns in the lower block's top row bound the centre so
+            # the connector stays within a spacing of a real node there.
+            ncols_top = top_row_cols(lower_idx)
+            center_x = box + (ncols_top - 1) * s / 2.0
+            lower_top = margin_y + gr * row_pitch + top_filled_row(lower_idx) * s
             upper_bot = margin_y + (gr + 1) * row_pitch
             span = upper_bot - lower_top
             hop = span / (n_connectors + 1)
             for c in range(n_connectors):
-                coords.append([box, lower_top + (c + 1) * hop])
+                coords.append([center_x, lower_top + (c + 1) * hop])
     coords = np.clip(np.array(coords), _COORD_MIN, _COORD_MAX)
     return coords[:, 0], coords[:, 1]
 
