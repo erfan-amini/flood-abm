@@ -97,6 +97,10 @@ DEFAULTS = dict(
     TIME_STEPS=75, RANDOM_SEED=42,
     # Spatial / population
     N_AGENTS=209, GRID_ROWS=4, GRID_COLS=3, N_CONNECTORS=1,
+    # Inner layout of agents WITHIN each neighborhood. 0 = auto: use the
+    # inverse of the neighborhood grid (so a 4x3 neighborhood grid gives ~3x4
+    # inner blocks). Set a positive value to fix the inner rows / cols.
+    NH_INNER_ROWS=0, NH_INNER_COLS=0,
     SLOPE=1.0, NOISE_FACTOR=0.02,
     # Attributes
     ENABLE_HETEROGENEITY=True, N_ATTRIBUTES=2, N_CLASSES=3,
@@ -119,7 +123,7 @@ DEFAULTS = dict(
     # depth-damage curve maps the flood depth to a damage fraction D in [0, 1],
     # and lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D grows from 1 (no
     # damage) to LAMBDA_DAMAGE_MAX (total failure at TOTAL_FAILURE_DEPTH).
-    LAMBDA_FLOOD=1.20, LAMBDA_DAMAGE_MAX=1.10,
+    LAMBDA_FLOOD=1.50, LAMBDA_DAMAGE_MAX=1.10,
     TOTAL_FAILURE_DEPTH=0.01,
     ENABLE_FLOOD_DECAY=False,   # off => every flood keeps full lambda_flood (no decay)
     # depth-damage curve: (depth, damage_fraction) points, interpolated
@@ -129,7 +133,7 @@ DEFAULTS = dict(
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_OBSERVATION=1.50, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
+    LAMBDA_OBSERVATION=2.00, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
@@ -284,7 +288,8 @@ _COORD_MIN, _COORD_MAX = 0.01, 0.99
 
 
 def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
-                    n_connectors, layout_spread=_MAX_EXTENT, node_spacing_mult=1.0):
+                    n_connectors, layout_spread=_MAX_EXTENT, node_spacing_mult=1.0,
+                    inner_rows=0, inner_cols=0):
     n_neighborhoods = grid_rows * grid_cols
     n_h = grid_rows * (grid_cols - 1)
     n_v = (grid_rows - 1) * grid_cols
@@ -294,10 +299,28 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
     remainder = agents_in_grids % n_neighborhoods
 
     def dims(n):
-        nr = int(np.ceil(np.sqrt(n)))
-        if nr % 2 == 0:
-            nr += 1
-        nc = int(np.ceil(n / nr))
+        # inner block shape for n agents. Default (inner_rows/cols = 0) uses the
+        # INVERSE of the neighborhood grid (rows<->cols swapped) as the target
+        # aspect, expanded just enough to hold n agents. A user-set inner_rows /
+        # inner_cols overrides this.
+        if inner_rows > 0 and inner_cols > 0:
+            nr, nc = inner_rows, inner_cols
+            while nr * nc < n:      # grow to fit all agents, keep aspect-ish
+                if nr <= nc:
+                    nr += 1
+                else:
+                    nc += 1
+            return nr, nc
+        # auto: invert the neighborhood aspect (grid_cols rows x grid_rows cols)
+        # and grow to fit n while keeping the inverted orientation (a wide
+        # neighborhood grid -> tall inner blocks, and vice-versa).
+        nr, nc = grid_cols, grid_rows
+        wide_inner = nc >= nr   # more columns than rows in the inverted target
+        while nr * nc < n:
+            if wide_inner:
+                nc += 1        # keep it wide: add columns first
+            else:
+                nr += 1        # keep it tall: add rows first
         return nr, nc
 
     max_per = base + (1 if remainder > 0 else 0)
@@ -381,9 +404,11 @@ def _generate_elevation(x, slope, noise_factor, rng):
 
 def generate_spatial(n_agents, distance_threshold, grid_rows, grid_cols,
                      n_connectors, slope, noise_factor, rng,
-                     layout_spread=_MAX_EXTENT, node_spacing_mult=1.0):
+                     layout_spread=_MAX_EXTENT, node_spacing_mult=1.0,
+                     inner_rows=0, inner_cols=0):
     x, y = _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
-                           n_connectors, layout_spread, node_spacing_mult)
+                           n_connectors, layout_spread, node_spacing_mult,
+                           inner_rows, inner_cols)
     z = _generate_elevation(x, slope, noise_factor, rng)
     return np.column_stack([x, y]), z
 
@@ -602,7 +627,8 @@ class FloodAdaptationModel(mesa.Model):
                 self.n_agents, self.DISTANCE_THRESHOLD, self.GRID_ROWS,
                 self.GRID_COLS, self.N_CONNECTORS, self.SLOPE,
                 self.NOISE_FACTOR, self.rng,
-                self.LAYOUT_SPREAD, self.NODE_SPACING_MULT)
+                self.LAYOUT_SPREAD, self.NODE_SPACING_MULT,
+                self.NH_INNER_ROWS, self.NH_INNER_COLS)
         self.n_agents = len(self.positions)   # grid or CSV sets the final count
 
         self.attributes = generate_attributes(
@@ -880,6 +906,8 @@ def _collect_params():
         GRID_ROWS=int(g("GRID_ROWS", D["GRID_ROWS"])),
         GRID_COLS=int(g("GRID_COLS", D["GRID_COLS"])),
         N_CONNECTORS=int(g("N_CONNECTORS", D["N_CONNECTORS"])),
+        NH_INNER_ROWS=int(g("NH_INNER_ROWS", D["NH_INNER_ROWS"])),
+        NH_INNER_COLS=int(g("NH_INNER_COLS", D["NH_INNER_COLS"])),
         SLOPE=g("SLOPE", D["SLOPE"]), NOISE_FACTOR=g("NOISE_FACTOR", D["NOISE_FACTOR"]),
         ENABLE_HETEROGENEITY=g("ENABLE_HETEROGENEITY", D["ENABLE_HETEROGENEITY"]),
         N_ATTRIBUTES=int(g("N_ATTRIBUTES", D["N_ATTRIBUTES"])),
@@ -1121,6 +1149,13 @@ def _page_settings():
             with gr2:
                 ni("Grid Cols", "GRID_COLS", 1, 10)
             ni("Connectors", "N_CONNECTORS", 0, 10)
+            in1, in2 = st.columns(2)
+            with in1:
+                ni("Inner Rows (0=auto)", "NH_INNER_ROWS", 0, 12)
+            with in2:
+                ni("Inner Cols (0=auto)", "NH_INNER_COLS", 0, 12)
+            st.caption("Layout of agents inside each neighbourhood. "
+                       "0 = auto (inverse of the neighbourhood grid).")
             nb("Elevation Noise", "NOISE_FACTOR", 0.01, "%.2f", 0.0, 1.0)
             sp1, sp2 = st.columns(2)
             with sp1:
