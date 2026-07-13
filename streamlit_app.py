@@ -96,7 +96,7 @@ DEFAULTS = dict(
     # Simulation
     TIME_STEPS=75, RANDOM_SEED=42,
     # Spatial / population
-    N_AGENTS=209, GRID_ROWS=4, GRID_COLS=3, N_CONNECTORS=1,
+    N_AGENTS=209, GRID_ROWS=3, GRID_COLS=3, N_CONNECTORS=1,
     # Inner layout of agents WITHIN each neighborhood. 0 = auto: use the
     # inverse of the neighborhood grid (so a 4x3 neighborhood grid gives ~3x4
     # inner blocks). Set a positive value to fix the inner rows / cols.
@@ -111,7 +111,7 @@ DEFAULTS = dict(
     #                      nodes pushed further toward the edges).
     #   NODE_SPACING_MULT- extra multiplier on the base node spacing (higher =
     #                      more distance between adjacent households).
-    LAYOUT_SPREAD=0.98, NODE_SPACING_MULT=1.15,
+    LAYOUT_SPREAD=0.98, NODE_SPACING_MULT=0.80,
     # Belief.  Opening default is a LOW baseline (0.08) consistent with the
     # baseline against which the survey odds ratios were estimated; the raw
     # survey point-estimates (e.g. b0 ~ 0.23) assume the other channels held
@@ -123,7 +123,7 @@ DEFAULTS = dict(
     # depth-damage curve maps the flood depth to a damage fraction D in [0, 1],
     # and lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D grows from 1 (no
     # damage) to LAMBDA_DAMAGE_MAX (total failure at TOTAL_FAILURE_DEPTH).
-    LAMBDA_FLOOD=1.50, LAMBDA_DAMAGE_MAX=1.10,
+    LAMBDA_FLOOD=1.40, LAMBDA_DAMAGE_MAX=1.10,
     TOTAL_FAILURE_DEPTH=0.01,
     ENABLE_FLOOD_DECAY=False,   # off => every flood keeps full lambda_flood (no decay)
     # depth-damage curve: (depth, damage_fraction) points, interpolated
@@ -133,7 +133,7 @@ DEFAULTS = dict(
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_OBSERVATION=2.00, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
+    LAMBDA_OBSERVATION=2.20, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
