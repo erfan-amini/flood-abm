@@ -630,7 +630,14 @@ class HouseholdAgent(mesa.Agent):
         self.belief = bayesian_update(self.belief, m.LAMBDA_INFO * mult)
 
     def make_decision(self):
-        if not self.is_retrofitted and self.belief >= self.pmt_threshold:
+        # Compare with a tiny tolerance so a belief that has saturated to
+        # (numerical) certainty still crosses a threshold set at the 1.0
+        # ceiling. Without this, theta = 1.0 is unreachable: belief = O/(1+O)
+        # is strictly < 1 for any finite odds and tops out near 1 - 1e-16, so
+        # `belief >= 1.0` would never fire and a homogeneous population fixed at
+        # theta = 1.0 could never adopt. The tolerance is far smaller than any
+        # meaningful threshold difference, so it does not affect theta < 1.
+        if not self.is_retrofitted and self.belief >= self.pmt_threshold - 1e-9:
             self.is_retrofitted = True
             self.retrofit_step = self.model.current_step
 
