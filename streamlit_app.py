@@ -50,7 +50,8 @@ Survey-anchored defaults (NYC Flood Vulnerability Survey, cleaned):
   lambda_damage_max 1.20  (cap of the depth-driven damage multiplier)
   total_failure_depth 0.05  (depth at which damage is total, D = 1)
   lambda_response   3.20  (precautionary-action-on-forecast odds ratio)
-  P(trusted info) 0.48 ; P(forecast prep) 0.65
+  P(trusted info) 0.46 (assigned to lowest-elevation homes first) ;
+  P(prepared on forecast | trusted info) 0.78
   Cumulative "at most k" retrofit targets: 18.0 / 22.3 / 27.4 %
 
 References
@@ -72,6 +73,10 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+# Standard Arial font for all figures (falls back to a Helvetica-like sans if
+# Arial is not installed on the host).
+plt.rcParams["font.family"] = "sans-serif"
+plt.rcParams["font.sans-serif"] = ["Arial", "Liberation Sans", "DejaVu Sans"]
 from matplotlib.patches import Patch
 from matplotlib.collections import LineCollection
 
@@ -92,8 +97,8 @@ DEFAULTS = dict(
     # Simulation
     TIME_STEPS=75, RANDOM_SEED=42,
     # Spatial / population
-    N_AGENTS=208, GRID_ROWS=3, GRID_COLS=4, N_CONNECTORS=2,
-    SLOPE=1.0, NOISE_FACTOR=0.05,
+    N_AGENTS=209, GRID_ROWS=3, GRID_COLS=3, N_CONNECTORS=1,
+    SLOPE=1.0, NOISE_FACTOR=0.02,
     # Attributes
     ENABLE_HETEROGENEITY=True, N_ATTRIBUTES=2, N_CLASSES=3,
     # Network / neighborhoods
@@ -125,7 +130,7 @@ DEFAULTS = dict(
     # one-time t=0 informational prior does not by itself push belief over the
     # threshold; tune upward toward the survey anchors as needed.
     LAMBDA_INFO=1.30, LAMBDA_RESPONSE=1.50,
-    P_TRUSTED_INFO=0.48, P_FORECAST_PREP=0.65,
+    P_TRUSTED_INFO=0.46, P_FORECAST_PREP=0.78,
     # PMT threshold
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
     # from Uniform(LOW, HIGH); when OFF, every household uses MEAN (a single
@@ -137,7 +142,10 @@ DEFAULTS = dict(
     RETURN_PERIODS=[10, 20, 50, 100],
     FLOOD_LEVELS=[0.05, 0.1, 0.2, 0.4],
     # Observed cumulative "at most k" retrofit rates (%)    OBSERVED_CUM_LABELS=["0", "\u22644", "5+"],
-    OBSERVED_CUM_RATES=[18.0, 22.3, 27.4],
+    OBSERVED_CUM_RATES=[18.2, 22.5, 27.3],
+    # observed retrofit COUNTS in each cumulative bin, as a fraction of the
+    # whole sample (denominator = N). Shown as x/N inside the plot-(b) bars.
+    OBSERVED_CUM_COUNTS=[38, 47, 57],
     OBSERVED_CUM_MAX=[0, 4, np.inf],   # upper flood-count bound for each cumulative bin
 )
 
@@ -371,14 +379,19 @@ def identify_neighborhoods(positions, eps, min_samples):
 # ============================================================================
 
 def cumulative_model_rates(agents, cum_max):
-    """Cumulative 'at most k floods' retrofit rate for each bound in cum_max."""
+    """For each cumulative flood bound in cum_max, return the retrofit rate as a
+    percentage of the WHOLE sample (denominator = number of agents), plus the
+    raw retrofit count in that cumulative bin.  Returns (rates, counts, n)."""
     counts = np.array([a.flood_count for a in agents])
     retro = np.array([1 if a.is_retrofitted else 0 for a in agents])
-    rates = []
+    n = len(agents)
+    rates, ncounts = [], []
     for hi in cum_max:
         m = counts <= hi
-        rates.append(100.0 * retro[m].sum() / m.sum() if m.sum() else 0.0)
-    return rates
+        k = int(retro[m].sum())
+        ncounts.append(k)
+        rates.append(100.0 * k / n if n else 0.0)
+    return rates, ncounts, n
 
 
 # ============================================================================
@@ -536,9 +549,20 @@ class FloodAdaptationModel(mesa.Model):
         self.G = build_network(self.positions, self.attributes, self.DISTANCE_THRESHOLD)
         self.grid = NetworkGrid(self.G)
 
-        # static trait draws (independent Bernoulli, survey-anchored fractions)
-        info_flags = self.rng.random(self.n_agents) < self.P_TRUSTED_INFO
-        fc_flags = self.rng.random(self.n_agents) < self.P_FORECAST_PREP
+        # Trusted information is assigned to LOW/MEDIUM-elevation homes first:
+        # the most flood-exposed households are the most likely to seek and hold
+        # a trusted flood-information source. We take the round(P x N) lowest-
+        # elevation households as the informed set (deterministic, ties broken
+        # by index for reproducibility), rather than an unstructured draw.
+        n_info = int(round(self.P_TRUSTED_INFO * self.n_agents))
+        info_flags = np.zeros(self.n_agents, dtype=bool)
+        if n_info > 0:
+            low_first = np.lexsort((np.arange(self.n_agents), self.elevations))
+            info_flags[low_first[:n_info]] = True
+        # Forecast preparation is conditional on having trusted information:
+        # P_FORECAST_PREP is P(prepared on forecast | trusted info). A household
+        # can only be a forecast-preparer if it has trusted info.
+        fc_flags = info_flags & (self.rng.random(self.n_agents) < self.P_FORECAST_PREP)
 
         self.agents_by_node = {}
         for i in range(self.n_agents):
@@ -979,10 +1003,15 @@ def _page_settings():
         fr1, fr2 = st.columns(2)
         with fr1:
             nb("Fraction with trusted information", "P_TRUSTED_INFO", 0.01, "%.2f", 0.0, 1.0,
-               help="Survey (never-flooded): 0.48.")
+               help="Share of households with a trusted flood-information "
+                    "source. Survey: 0.46 (95/209).")
         with fr2:
-            nb("Fraction using forecast info", "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
-               help="Survey (never-flooded): 0.65.")
+            nb("Fraction prepared on forecast (of those informed)",
+               "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
+               help="Among households WITH trusted information, the share that "
+                    "took precautionary action on the forecast. Survey: 0.78 "
+                    "(74/95). Applied conditionally \u2014 only informed households "
+                    "can be forecast-preparers.")
 
     # ===================== SECONDARY / STRUCTURAL =====================
     st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
@@ -1097,22 +1126,32 @@ def _fig_elevation_comparison(model):
     return fig
 
 
-def _fig_comparison(model, cum, obs):
-    """Model vs observed cumulative retrofit rate."""
+def _fig_comparison(model, model_rates, model_counts, n, obs_rates, obs_counts):
+    """Model vs observed retrofit share of the whole sample, for three
+    cumulative flood-experience groups. Bar height = count / N (%); the count
+    x/N is printed inside each bar in white."""
     fig, ax = plt.subplots(figsize=(7, 4.4))
     x = np.arange(3); w = 0.38
-    bm = ax.bar(x - w / 2, cum, w, label="Model", color=CLR_MODEL, edgecolor="black")
-    bo = ax.bar(x + w / 2, obs, w, label="Observed", color=CLR_OBS, edgecolor="black")
-    for bars in (bm, bo):
-        for bar in bars:
+    bm = ax.bar(x - w / 2, model_rates, w, label="Model",
+                color=CLR_MODEL, edgecolor="black")
+    bo = ax.bar(x + w / 2, obs_rates, w, label="Observed",
+                color=CLR_OBS, edgecolor="black")
+    # x/N inside each bar (white), percentage above each bar
+    def annotate(bars, counts, rates):
+        for bar, c, r in zip(bars, counts, rates):
             h = bar.get_height()
-            if h > 0:
-                ax.text(bar.get_x() + bar.get_width() / 2, h + 1, f"{h:.0f}",
-                        ha="center", va="bottom", fontsize=9, fontweight="bold")
-    ax.set(xlabel="Flood experience (cumulative, at most k)",
-           ylabel="Retrofit rate (%)",
-           ylim=(0, max(max(cum), max(obs)) * 1.25 + 1))
-    ax.set_xticks(x); ax.set_xticklabels(["0", "\u2264 4", "all"])
+            cx = bar.get_x() + bar.get_width() / 2
+            if h > 3:
+                ax.text(cx, h / 2, f"{c}/{n}", ha="center", va="center",
+                        fontsize=8.5, fontweight="bold", color="white")
+            ax.text(cx, h + 1, f"{r:.0f}%", ha="center", va="bottom",
+                    fontsize=9, fontweight="bold")
+    annotate(bm, model_counts, model_rates)
+    annotate(bo, obs_counts, obs_rates)
+    ax.set(ylabel="Retrofit rate (% of all households)",
+           ylim=(0, max(max(model_rates), max(obs_rates)) * 1.28 + 1))
+    ax.set_xticks(x)
+    ax.set_xticklabels(["never flooded", "less than one\nflood a year", "overall"])
     ax.legend(); ax.grid(alpha=0.3, axis="y")
     fig.tight_layout()
     return fig
@@ -1237,8 +1276,9 @@ def _page_results():
     _config_chips(p)
 
     mdf = st.session_state["model_df"]
-    cum = st.session_state["cum_rates"]
-    obs = p["OBSERVED_CUM_RATES"]
+    model_rates, model_counts, n_sample = st.session_state["cum_rates"]
+    obs_rates = p["OBSERVED_CUM_RATES"]
+    obs_counts = p.get("OBSERVED_CUM_COUNTS", [0, 0, 0])
 
     r1c1, r1c2, r1c3, r1c4 = st.columns(4)
     for col, lab, val in [
@@ -1258,7 +1298,7 @@ def _page_results():
     # ---- six figures in a 3 x 2 grid ----
     figs = [
         ("(a)  Adoption over time & flood levels", _fig_adoption_flood(model)),
-        ("(b)  Model vs observed (cumulative)",    _fig_comparison(model, cum, obs)),
+        ("(b)  Model vs observed",    _fig_comparison(model, model_rates, model_counts, n_sample, obs_rates, obs_counts)),
         ("(c)  Retrofit adoption by elevation",    _fig_elevation_comparison(model)),
         ("(d)  Bayesian belief evolution",         _fig_belief_evolution(model)),
         ("(e)  Social network",                    _fig_network(model)),
@@ -1271,11 +1311,13 @@ def _page_results():
                 st.markdown(f"#### {title}")
                 st.pyplot(fig); plt.close(fig)
 
-    st.markdown("#### Cumulative rates  (model vs survey)")
+    st.markdown("#### Retrofit share of all households  (model vs survey)")
     st.dataframe(pd.DataFrame({
-        "Bin (at most k floods)": ["0", "\u2264 4", "all"],
-        "Model (%)": [f"{r:.1f}" for r in cum],
-        "Observed (%)": [f"{o:.1f}" for o in obs]}),
+        "Group": ["never flooded", "less than one flood a year", "overall"],
+        "Model": [f"{c}/{n_sample} ({r:.1f}%)"
+                  for c, r in zip(model_counts, model_rates)],
+        "Observed": [f"{c}/{n_sample} ({r:.1f}%)"
+                     for c, r in zip(obs_counts, obs_rates)]}),
         hide_index=True, use_container_width=True)
 
     # ---- data export (as in the previous app) ----
@@ -1518,11 +1560,17 @@ def _page_documentation():
     st.markdown(
         "Two binary traits gate the conditional multipliers on the information "
         "channel: *has trusted information* and *takes precautionary action on "
-        "forecasts*. Each is drawn once at $t=0$ as an independent Bernoulli "
-        "variable using survey-anchored fractions among never-flooded "
-        "households \u2014 0.48 and 0.65 respectively \u2014 and is fixed for the life of "
-        "the simulation. The flood-experience channel needs no such trait: its "
-        "damage multiplier is computed directly from each flood's depth.")
+        "forecasts*. **Trusted information is assigned to the lowest-elevation "
+        "households first** \u2014 the round($P_{\\text{info}}\\!\\times\\!N$) most "
+        "flood-exposed homes \u2014 reflecting that the households most at risk are "
+        "the most likely to seek and hold a trusted flood-information source "
+        "($P_{\\text{info}}=0.46$ in the survey). **Forecast preparation is then "
+        "conditional on being informed**: among households with trusted "
+        "information, a fraction $P_{\\text{prep}\\,|\\,\\text{info}}=0.78$ also "
+        "take precautionary action on the forecast (survey: 74/95). Both traits "
+        "are fixed for the life of the simulation. The flood-experience channel "
+        "needs no such trait: its damage multiplier is computed directly from "
+        "each flood's depth.")
 
     # ---- 5 Decision rule ----
     st.markdown('<div class="doc-h">5 &nbsp; Decision rule (PMT threshold)</div>',
@@ -2145,7 +2193,8 @@ if _running_in_streamlit():
 elif __name__ == "__main__":
     m = FloodAdaptationModel(dict(DEFAULTS), seed=42)
     m.run()
-    rates = cumulative_model_rates(list(m.agents), DEFAULTS["OBSERVED_CUM_MAX"])
-    print("cumulative model rates 0/<=4/5+:", ["%.1f" % r for r in rates])
+    rates, counts, n = cumulative_model_rates(list(m.agents), DEFAULTS["OBSERVED_CUM_MAX"])
+    print("cumulative model rates 0/<=4/all (% of sample):", ["%.1f" % r for r in rates])
+    print("counts:", counts, "of", n)
     print("final pct retrofitted: %.1f%%" %
           m.get_model_dataframe()["pct_retrofitted"].iloc[-1])
