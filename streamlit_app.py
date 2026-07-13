@@ -375,20 +375,27 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
                     c += 1
                 if c >= n_here:
                     break
+    # Horizontal connectors: link neighbourhoods left<->right. Placed to the
+    # right of a neighbourhood, aligned to an actual node ROW (the middle row)
+    # so the connector sits in line with real nodes, not between them.
+    mid_row = (nh_rows - 1) // 2
+    mid_col = (nh_cols - 1) // 2
     for gr in range(grid_rows):
         for gc in range(grid_cols - 1):
             lox = margin_x + gc * (nh_w + gap_x)
             loy = margin_y + gr * (nh_h + gap_y)
             rex = lox + nh_w
-            my = loy + nh_h / 2
+            my = loy + mid_row * sy      # snap to a node row
             for c in range(n_connectors):
                 coords.append([rex + (c + 1) * sx, my])
+    # Vertical connectors: link neighbourhoods top<->bottom, aligned to an
+    # actual node COLUMN (the middle column) for the same reason.
     for gr in range(grid_rows - 1):
         for gc in range(grid_cols):
             box = margin_x + gc * (nh_w + gap_x)
             boy = margin_y + gr * (nh_h + gap_y)
             tey = boy + nh_h
-            mx = box + nh_w / 2
+            mx = box + mid_col * sx      # snap to a node column
             for c in range(n_connectors):
                 coords.append([mx, tey + (c + 1) * sy])
     coords = np.clip(np.array(coords), _COORD_MIN, _COORD_MAX)
