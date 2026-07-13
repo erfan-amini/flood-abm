@@ -136,6 +136,7 @@ DEFAULTS = dict(
     # threshold; tune upward toward the survey anchors as needed.
     LAMBDA_INFO=1.30, LAMBDA_RESPONSE=1.50,
     P_TRUSTED_INFO=0.46, P_FORECAST_PREP=0.78,
+    ENABLE_INFO_CHANNEL=True,   # off => information effect is zero (lambdas -> 1)
     # PMT threshold
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
     # from Uniform(LOW, HIGH); when OFF, every household uses MEAN (a single
@@ -530,6 +531,8 @@ class HouseholdAgent(mesa.Agent):
         if not self.has_trusted_info:
             return
         m = self.model
+        if not m.ENABLE_INFO_CHANNEL:
+            return          # information channel off: no update (lambdas -> 1)
         mult = m.LAMBDA_RESPONSE if self.forecast_prep else 1.0
         self.belief = bayesian_update(self.belief, m.LAMBDA_INFO * mult)
 
@@ -890,6 +893,7 @@ def _collect_params():
         SIM_THRESHOLD=g("SIM_THRESHOLD", D["SIM_THRESHOLD"]),
         LAMBDA_INFO=g("LAMBDA_INFO", D["LAMBDA_INFO"]),
         LAMBDA_RESPONSE=g("LAMBDA_RESPONSE", D["LAMBDA_RESPONSE"]),
+        ENABLE_INFO_CHANNEL=g("ENABLE_INFO_CHANNEL", D["ENABLE_INFO_CHANNEL"]),
         P_TRUSTED_INFO=g("P_TRUSTED_INFO", D["P_TRUSTED_INFO"]),
         P_FORECAST_PREP=g("P_FORECAST_PREP", D["P_FORECAST_PREP"]),
         PMT_THRESHOLD_MEAN=g("PMT_THRESHOLD_MEAN", D["PMT_THRESHOLD_MEAN"]),
@@ -1048,6 +1052,14 @@ def _page_settings():
     with ch3:
         _sec("Channel 3 \u00b7 Information",
              "One-time t=0 prior from trusted information and forecast info.", C_CH3)
+        st.checkbox(
+            "Enable information channel",
+            value=bool(_P.get("p_ENABLE_INFO_CHANNEL", D["ENABLE_INFO_CHANNEL"])),
+            key="p_ENABLE_INFO_CHANNEL",
+            on_change=_sync, args=("p_ENABLE_INFO_CHANNEL",),
+            help="Off = no information effect (\u03bb_info and \u03bb_response act as 1) "
+                 "and the trusted-information rings are hidden in the network plot.")
+        _P["p_ENABLE_INFO_CHANNEL"] = S["p_ENABLE_INFO_CHANNEL"]
         nb("\u03bb_info  (base, if trusted info)", "LAMBDA_INFO", 0.01, "%.2f", 1.0, None,
            help="One-time t=0 factor for agents with a trusted source. "
                 "Survey: weak alone (OR ~1.39).")
@@ -1213,11 +1225,11 @@ def _fig_comparison(model, m_rates, m_retro, m_sizes, o_rates, o_retro, o_sizes)
             if h > 2:
                 ax.text(cx, h / 2, f"{k}/{n_tot}", ha="center", va="center",
                         fontsize=10.5, fontweight="bold", color="white")
-            ax.text(cx, h + 0.6, f"{r:.0f}%", ha="center", va="bottom",
+            ax.text(cx, h + 0.6, f"{r:.2f}%", ha="center", va="bottom",
                     fontsize=9, fontweight="bold")
     annotate(bm, m_retro, n_model, m_share)
     annotate(bo, o_retro, n_obs, o_share)
-    ax.set(ylabel="Retrofit rate (% of all households)",
+    ax.set(ylabel="Retrofitted (% of all households)",
            ylim=(0, max(max(m_share), max(o_share)) * 1.25 + 3))
     ax.set_xticks(x)
     ax.set_xticklabels(["never flooded",
@@ -1262,17 +1274,23 @@ def _fig_network(model):
     agents = list(model.agents)
     _draw_edges(ax, model, alpha=0.3)
     DARK_RED = "#8b0000"
+    # Trusted-information rings only show when the information channel is on.
+    show_info = getattr(model, "ENABLE_INFO_CHANNEL", True)
+    def ring(a):
+        return DARK_RED if (show_info and a.has_trusted_info) else "black"
+    def rlw(a):
+        return 1.6 if (show_info and a.has_trusted_info) else 0.8
     na = [a for a in agents if not a.is_retrofitted]
     ad = [a for a in agents if a.is_retrofitted]
     if na:
         ax.scatter([a.x for a in na], [a.y for a in na], c="#e2e8f0", s=170,
-                   edgecolor=[DARK_RED if a.has_trusted_info else "black" for a in na],
-                   linewidth=[1.6 if a.has_trusted_info else 0.8 for a in na], zorder=2)
+                   edgecolor=[ring(a) for a in na],
+                   linewidth=[rlw(a) for a in na], zorder=2)
     if ad:
         sc = ax.scatter([a.x for a in ad], [a.y for a in ad],
                         c=[a.retrofit_step for a in ad], cmap="YlGn", s=185,
-                        edgecolor=[DARK_RED if a.has_trusted_info else "black" for a in ad],
-                        linewidth=[1.6 if a.has_trusted_info else 0.8 for a in ad], zorder=3,
+                        edgecolor=[ring(a) for a in ad],
+                        linewidth=[rlw(a) for a in ad], zorder=3,
                         vmin=1, vmax=max(1, model.current_step))
         fig.colorbar(sc, ax=ax, shrink=0.7).set_label("Time step (e.g., year) when retrofit")
     # number inside each node = that household's personal flood count
@@ -1281,13 +1299,15 @@ def _fig_network(model):
                 fontsize=6, fontweight="bold", zorder=4)
     ax.set(xlabel="x", ylabel="y", xlim=(-0.02, 1.02), ylim=(-0.02, 1.02))
     ax.set_aspect("equal"); ax.grid(alpha=0.3)
-    ax.legend(handles=[Patch(facecolor="#e2e8f0", edgecolor="black", label="Not retrofitted"),
-                       Patch(facecolor="#31a354", edgecolor="black", label="Retrofitted"),
-                       Patch(facecolor="white", edgecolor=DARK_RED, linewidth=1.6,
-                             label="Trusted information")],
-              loc="upper right", fontsize=8)
-    ax.text(0.0, -0.13, "Number in each node = household\u2019s personal flood count; "
-            "dark-red ring = trusted information.",
+    legend_handles = [Patch(facecolor="#e2e8f0", edgecolor="black", label="Not retrofitted"),
+                      Patch(facecolor="#31a354", edgecolor="black", label="Retrofitted")]
+    if show_info:
+        legend_handles.append(Patch(facecolor="white", edgecolor=DARK_RED,
+                                    linewidth=1.6, label="Trusted information"))
+    ax.legend(handles=legend_handles, loc="upper right", fontsize=8)
+    caption = "Number in each node = household\u2019s personal flood count"
+    caption += ("; dark-red ring = trusted information." if show_info else ".")
+    ax.text(0.0, -0.13, caption,
             transform=ax.transAxes, fontsize=7.5, style="italic", color="#64748b")
     fig.tight_layout()
     return fig
