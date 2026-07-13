@@ -356,11 +356,24 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
     # Centre the layout in both x and y.
     margin_x = max(_MIN_MARGIN, (1.0 - total_w) / 2)
     margin_y = max(_MIN_MARGIN, (1.0 - total_h) / 2)
+    # Distribute the leftover agents (remainder) EVENLY across neighbourhoods
+    # rather than piling them onto the first-indexed ones: pick `remainder`
+    # neighbourhood indices spread as uniformly as possible over all of them.
+    if remainder:
+        extra_idx = {int(round(i * n_neighborhoods / remainder))
+                     % n_neighborhoods for i in range(remainder)}
+        # rounding can collide; top up to exactly `remainder` distinct indices
+        i = 0
+        while len(extra_idx) < remainder and i < n_neighborhoods:
+            extra_idx.add(i)
+            i += 1
+    else:
+        extra_idx = set()
     coords = []
     for gr in range(grid_rows):
         for gc in range(grid_cols):
             nh_idx = gr * grid_cols + gc
-            n_here = base + (1 if nh_idx < remainder else 0)
+            n_here = base + (1 if nh_idx in extra_idx else 0)
             ox = margin_x + gc * (nh_w + gap_x)
             oy = margin_y + gr * (nh_h + gap_y)
             c = 0
