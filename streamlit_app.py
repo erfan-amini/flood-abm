@@ -332,6 +332,50 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
     # domain by spreading the GAPS between neighbourhoods instead.
     s = _DIAGONAL_SAFETY * distance_threshold / np.sqrt(2) * node_spacing_mult
     s = min(s, _DIAGONAL_SAFETY * distance_threshold / np.sqrt(2))
+    # The inner block must FIT the domain: grid_cols blocks across (each
+    # (nh_cols-1)*s wide) plus the minimum gaps must not exceed the usable
+    # width, and likewise for rows/height. If the (possibly inverted-wide)
+    # default block overflows, cap its columns/rows to what fits and grow the
+    # other dimension so every agent still gets a non-overlapping cell. This
+    # replaces the old behaviour where overflowing agents were clipped onto the
+    # domain edge and stacked on top of one another.
+    min_gap = (n_connectors + 1) * s
+    def fit_count(n_blocks, spacing, gap):
+        # max nodes-per-block along an axis so n_blocks of them + gaps fit _MAX_EXTENT
+        if spacing <= 0:
+            return 1
+        avail = (_MAX_EXTENT - (n_blocks - 1) * gap) / n_blocks
+        return max(1, int(avail / spacing) + 1)
+    max_cols = fit_count(grid_cols, s, min_gap)
+    max_rows = fit_count(grid_rows, s, min_gap)
+    nh_cols = min(nh_cols, max_cols)
+    nh_rows = min(nh_rows, max_rows)
+    # after capping, make sure the block still holds every agent; grow whichever
+    # axis still has room (never past its fit cap).
+    while nh_rows * nh_cols < max_per:
+        if nh_cols < max_cols and nh_cols <= nh_rows:
+            nh_cols += 1
+        elif nh_rows < max_rows:
+            nh_rows += 1
+        elif nh_cols < max_cols:
+            nh_cols += 1
+        else:
+            break   # domain genuinely too small; spacing will be shrunk below
+    # If the block still cannot hold all agents at this spacing (very small
+    # domain / many agents), shrink the isotropic spacing so it fits. This keeps
+    # every agent in its own cell instead of clipping and stacking; links may
+    # then span slightly more cells but nodes never overlap.
+    while nh_rows * nh_cols < max_per and s > 1e-4:
+        s *= 0.98
+        max_cols = fit_count(grid_cols, s, (n_connectors + 1) * s)
+        max_rows = fit_count(grid_rows, s, (n_connectors + 1) * s)
+        while nh_rows * nh_cols < max_per and (nh_cols < max_cols or nh_rows < max_rows):
+            if nh_cols < max_cols and nh_cols <= nh_rows:
+                nh_cols += 1
+            elif nh_rows < max_rows:
+                nh_rows += 1
+            elif nh_cols < max_cols:
+                nh_cols += 1
     sx = sy = s
     nh_w = (nh_cols - 1) * s
     nh_h = (nh_rows - 1) * s
@@ -1573,9 +1617,25 @@ def _page_documentation():
                 "$\\lambda=1$ is uninformative. When several channels fire in "
                 "the same step their factors compose multiplicatively, and "
                 "because multiplication is commutative the update is "
-                "order-independent [5]:")
+                "order-independent [5]. Writing each channel as its **base "
+                "factor** times its **conditional multiplier(s)** (in "
+                "parentheses), the complete update is:")
     st.latex(r"O_i^{\text{post}} = O_i^{\text{prior}}\times "
-             r"\lambda_{\text{exp}}\times\lambda_{\text{prox}}\times\lambda_{\text{info}}")
+             r"\underbrace{\bigl(\lambda_{\text{flood}}\times"
+             r"\lambda_{\text{damage}}\bigr)}_{\text{experience (per flood)}}\times "
+             r"\underbrace{\bigl(\lambda_{\text{obs}}\times"
+             r"\lambda_{\text{sim}}\bigr)}_{\text{proximity (per neighbour)}}\times "
+             r"\underbrace{\bigl(\lambda_{\text{info}}\times"
+             r"\lambda_{\text{response}}\bigr)}_{\text{information (once, }t=0)}")
+    st.markdown("Each parenthesised group is one channel: the first term is the "
+                "base factor and the term(s) after $\\times$ are conditional "
+                "multipliers that equal 1 when their trigger is absent "
+                "($\\lambda_{\\text{damage}}$ scales with flood depth, "
+                "$\\lambda_{\\text{sim}}$ applies only to a similar neighbour, "
+                "$\\lambda_{\\text{response}}$ only to forecast-preparers). The "
+                "experience group is applied once per flood and the proximity "
+                "group once per newly-retrofitted connected neighbour, so those "
+                "groups repeat as many times as their events occur in a step.")
     st.markdown("**Step 3 \u2014 Convert the posterior odds back to a probability:**")
     st.latex(r"P_i^{\text{post}}(H_1) = \frac{O_i^{\text{post}}}{1 + O_i^{\text{post}}}")
     st.markdown("This is algebraically identical to the standard form of Bayes\u2019 "
