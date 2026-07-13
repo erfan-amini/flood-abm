@@ -378,14 +378,19 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
                 nh_cols += 1
     sx = sy = s
     nh_w = (nh_cols - 1) * s
-    nh_h = (nh_rows - 1) * s
+    # A block fills row-by-row from the bottom, so its top row can be empty. The
+    # OCCUPIED height is the top-filled row of the fullest block, not the
+    # nominal (nh_rows-1) rows. Rows are pitched by this occupied height so a
+    # vertical connector sits exactly one node spacing s from the block below
+    # AND the block above (never farther than agents are from each other). This
+    # brings rows closer together and may leave margin around the settlement,
+    # which is fine -- covering the whole domain is not the goal.
+    filled_top = max(0, -(-max_per // nh_cols) - 1)   # ceil(max_per/nh_cols)-1
+    nh_h = filled_top * s
     # Inter-neighbourhood gap = one connector chain at the SAME node spacing s.
-    # A connector is therefore exactly one agent-spacing (s) from its neighbours
-    # -- never farther than agents are from each other. The layout is NOT
-    # stretched to fill the domain: filling would push connectors past the
-    # agent spacing, so we prefer a tighter, well-connected settlement that may
-    # leave margin around it.
     gap_x = gap_y = (n_connectors + 1) * s
+    row_pitch = nh_h + gap_y
+    col_pitch = nh_w + gap_x
     total_w = grid_cols * nh_w + (grid_cols - 1) * gap_x
     total_h = grid_rows * nh_h + (grid_rows - 1) * gap_y
 
@@ -421,50 +426,42 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
                     c += 1
                 if c >= n_here:
                     break
-    # Horizontal connectors: link neighbourhoods left<->right. Placed to the
-    # right of a neighbourhood, aligned to an actual node ROW (the middle row)
-    # so the connector sits in line with real nodes, not between them.
-    mid_row = (nh_rows - 1) // 2
-    mid_col = (nh_cols - 1) // 2
-
     def top_filled_row(nh_idx):
         # blocks fill row-by-row from the bottom; the topmost occupied row for a
-        # block holding n_here agents is ceil(n_here / nh_cols) - 1. Connectors
-        # must attach to a REAL node, so we use this instead of the nominal top
-        # row (which can be empty when the block isn't completely filled).
+        # block holding n_here agents is ceil(n_here / nh_cols) - 1.
         n_here = base + (1 if nh_idx in extra_idx else 0)
         return max(0, -(-n_here // nh_cols) - 1)   # ceil division
 
-    def top_row_cols(nh_idx):
-        # number of occupied columns in that block's top filled row (a partial
-        # top row may not span all columns).
-        n_here = base + (1 if nh_idx in extra_idx else 0)
-        full = n_here % nh_cols
-        return nh_cols if full == 0 else full
-
-    # Every connector hop is exactly one node spacing s -- a connector is never
-    # farther from a neighbour than agents are from each other. Horizontal
-    # connectors step right from the block edge; vertical connectors step up
-    # from the lower block's top FILLED node (so they attach to a real node even
-    # when the top row is partially empty).
+    # Horizontal connectors: centred VERTICALLY (the middle filled row) and
+    # stepped right from the block edge. Each hop is one node spacing s, so the
+    # connector is s from the block on the left and s from the block on the
+    # right (the inter-block gap is exactly (n_connectors+1)*s wide).
+    mid_row = (nh_rows - 1) // 2
     for gr in range(grid_rows):
         for gc in range(grid_cols - 1):
-            lox = margin_x + gc * (nh_w + gap_x)
-            loy = margin_y + gr * (nh_h + gap_y)
+            lox = margin_x + gc * col_pitch
+            loy = margin_y + gr * row_pitch
+            # centre row, but never above the filled region of either block
+            r = min(mid_row, top_filled_row(gr * grid_cols + gc),
+                    top_filled_row(gr * grid_cols + gc + 1))
             rex = lox + nh_w
-            my = loy + mid_row * sy      # snap to a node row
+            my = loy + r * s
             for c in range(n_connectors):
                 coords.append([rex + (c + 1) * s, my])
+    # Vertical connectors: placed on the LEFT column (col 0, always filled) and
+    # spaced EQUIDISTANTLY between the lower block's top node and the upper
+    # block's bottom node -- so the connector is the same distance from the
+    # agent below and the agent above. With rows pitched by the filled height
+    # that distance equals the normal node spacing s.
     for gr in range(grid_rows - 1):
         for gc in range(grid_cols):
-            box = margin_x + gc * (nh_w + gap_x)
-            boy = margin_y + gr * (nh_h + gap_y)
-            lower_idx = gr * grid_cols + gc
-            col = min(mid_col, top_row_cols(lower_idx) - 1)
-            lower_top = boy + top_filled_row(lower_idx) * sy
-            mx = box + col * sx
+            box = margin_x + gc * col_pitch
+            lower_top = margin_y + gr * row_pitch + top_filled_row(gr * grid_cols + gc) * s
+            upper_bot = margin_y + (gr + 1) * row_pitch
+            span = upper_bot - lower_top
+            hop = span / (n_connectors + 1)
             for c in range(n_connectors):
-                coords.append([mx, lower_top + (c + 1) * s])
+                coords.append([box, lower_top + (c + 1) * hop])
     coords = np.clip(np.array(coords), _COORD_MIN, _COORD_MAX)
     return coords[:, 0], coords[:, 1]
 
