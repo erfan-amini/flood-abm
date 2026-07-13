@@ -379,28 +379,13 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
     sx = sy = s
     nh_w = (nh_cols - 1) * s
     nh_h = (nh_rows - 1) * s
-    base_gap = (n_connectors + 1) * s
-    # Choose inter-neighbourhood gaps so the whole layout fills layout_spread of
-    # the domain on each axis. Gaps are >= base_gap (never overlap) so connector
-    # chains still fit, and can grow independently on x and y to fill.
-    def gap_for(span, n_blocks, block_extent, vertical=False):
-        if n_blocks <= 1:
-            return base_gap
-        want = (span - n_blocks * block_extent) / (n_blocks - 1)
-        # A connector chain of n_connectors can bridge at most
-        # (n_connectors + 1) hops of <= threshold each; keep the gap within that
-        # so the chain always links both neighbourhoods (connectivity > spread).
-        max_gap = (n_connectors + 1) * _DIAGONAL_SAFETY * distance_threshold
-        # Vertically, a block's top row may be partially empty (blocks fill from
-        # the bottom), so the connector actually spans the gap PLUS the empty
-        # rows above the top filled row. Reserve that slack (up to the full
-        # unfilled height) in the cap so the chain still reaches real nodes.
-        if vertical:
-            unfilled = (nh_rows - 1) - max(0, -(-max_per // nh_cols) - 1)
-            max_gap = max(base_gap, max_gap - unfilled * s - s)
-        return min(max(base_gap, want), max_gap)
-    gap_x = gap_for(layout_spread, grid_cols, nh_w)
-    gap_y = gap_for(layout_spread, grid_rows, nh_h, vertical=True)
+    # Inter-neighbourhood gap = one connector chain at the SAME node spacing s.
+    # A connector is therefore exactly one agent-spacing (s) from its neighbours
+    # -- never farther than agents are from each other. The layout is NOT
+    # stretched to fill the domain: filling would push connectors past the
+    # agent spacing, so we prefer a tighter, well-connected settlement that may
+    # leave margin around it.
+    gap_x = gap_y = (n_connectors + 1) * s
     total_w = grid_cols * nh_w + (grid_cols - 1) * gap_x
     total_h = grid_rows * nh_h + (grid_rows - 1) * gap_y
 
@@ -441,7 +426,6 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
     # so the connector sits in line with real nodes, not between them.
     mid_row = (nh_rows - 1) // 2
     mid_col = (nh_cols - 1) // 2
-    hop_x = gap_x / (n_connectors + 1)   # even hop across the horizontal gap
 
     def top_filled_row(nh_idx):
         # blocks fill row-by-row from the bottom; the topmost occupied row for a
@@ -458,6 +442,11 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
         full = n_here % nh_cols
         return nh_cols if full == 0 else full
 
+    # Every connector hop is exactly one node spacing s -- a connector is never
+    # farther from a neighbour than agents are from each other. Horizontal
+    # connectors step right from the block edge; vertical connectors step up
+    # from the lower block's top FILLED node (so they attach to a real node even
+    # when the top row is partially empty).
     for gr in range(grid_rows):
         for gc in range(grid_cols - 1):
             lox = margin_x + gc * (nh_w + gap_x)
@@ -465,27 +454,17 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
             rex = lox + nh_w
             my = loy + mid_row * sy      # snap to a node row
             for c in range(n_connectors):
-                coords.append([rex + (c + 1) * hop_x, my])
-    # Vertical connectors: bridge the TOP FILLED row of the lower block to the
-    # bottom row of the upper block, on a column that is occupied in BOTH the
-    # lower block's top row and the upper block's bottom row, so the hops land
-    # within threshold of real nodes on both sides (previously they anchored to
-    # a possibly-empty nominal top row/column and reached only one side,
-    # splitting the grid into disconnected rows).
+                coords.append([rex + (c + 1) * s, my])
     for gr in range(grid_rows - 1):
         for gc in range(grid_cols):
             box = margin_x + gc * (nh_w + gap_x)
             boy = margin_y + gr * (nh_h + gap_y)
             lower_idx = gr * grid_cols + gc
-            # a column present in the lower block's (possibly partial) top row
             col = min(mid_col, top_row_cols(lower_idx) - 1)
             lower_top = boy + top_filled_row(lower_idx) * sy
-            upper_bot = margin_y + (gr + 1) * (nh_h + gap_y)
-            span = upper_bot - lower_top
-            hop = span / (n_connectors + 1)
             mx = box + col * sx
             for c in range(n_connectors):
-                coords.append([mx, lower_top + (c + 1) * hop])
+                coords.append([mx, lower_top + (c + 1) * s])
     coords = np.clip(np.array(coords), _COORD_MIN, _COORD_MAX)
     return coords[:, 0], coords[:, 1]
 
