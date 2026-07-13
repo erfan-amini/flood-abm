@@ -153,7 +153,7 @@ DEFAULTS = dict(
     OBSERVED_BIN_EDGES=[(0, 0), (1, 4), (5, np.inf)],
     #   Retrofit = any of: raising utilities, wet-floodproofing the basement,
     #   dry-floodproofing, or raising the home (survey ReQ64 actions).
-    OBSERVED_BIN_RATES=[18.0, 27.5, 58.6],     # per-category retrofit rate (%)
+    OBSERVED_BIN_RATES=[18.0, 27.5, 58.6],     # per-category rate (%), reference only
     OBSERVED_BIN_RETRO=[18, 22, 17],           # retrofit count within each bin
     OBSERVED_BIN_SIZES=[100, 80, 29],          # number of survey households in bin
 )
@@ -1189,34 +1189,40 @@ def _fig_elevation_comparison(model):
 
 
 def _fig_comparison(model, m_rates, m_retro, m_sizes, o_rates, o_retro, o_sizes):
-    """Model vs observed PER-CATEGORY retrofit rate for three DISTINCT
-    flood-experience groups (never flooded / flooded <a year / flooded >a year).
-    Bar height = retrofitted / households in that group (%); the ratio
-    (retrofitted / group size) is printed inside each bar in white."""
+    """Model vs observed retrofit share of ALL households, for three DISTINCT
+    flood-experience groups (never flooded / flooded < once a year / flooded >
+    once a year). Bar height = retrofitted in that group / total households
+    (%); the ratio k/N is printed inside each bar in white. N is the total
+    number of households (model agents, or 209 survey households)."""
+    n_model = sum(m_sizes)
+    n_obs = sum(o_sizes)
+    # rates are computed against the whole-sample denominator, not bin size
+    m_share = [100.0 * k / n_model if n_model else 0.0 for k in m_retro]
+    o_share = [100.0 * k / n_obs if n_obs else 0.0 for k in o_retro]
     fig, ax = plt.subplots(figsize=(7, 4.4))
     x = np.arange(3); w = 0.38
-    bm = ax.bar(x - w / 2, m_rates, w, label="Model",
+    bm = ax.bar(x - w / 2, m_share, w, label="Model",
                 color=CLR_MODEL, edgecolor="black")
-    bo = ax.bar(x + w / 2, o_rates, w, label="Observed",
+    bo = ax.bar(x + w / 2, o_share, w, label="Observed",
                 color=CLR_OBS, edgecolor="black")
-    # k/n_bin inside each bar (white), per-category percentage above
-    def annotate(bars, retro, sizes, rates):
-        for bar, k, nb, r in zip(bars, retro, sizes, rates):
+    # k/N inside each bar (white), percentage-of-all above
+    def annotate(bars, retro, n_tot, shares):
+        for bar, k, r in zip(bars, retro, shares):
             h = bar.get_height()
             cx = bar.get_x() + bar.get_width() / 2
-            if h > 5:
-                ax.text(cx, h / 2, f"{k}/{nb}", ha="center", va="center",
+            if h > 2:
+                ax.text(cx, h / 2, f"{k}/{n_tot}", ha="center", va="center",
                         fontsize=10.5, fontweight="bold", color="white")
-            ax.text(cx, h + 1.5, f"{r:.0f}%", ha="center", va="bottom",
+            ax.text(cx, h + 0.6, f"{r:.0f}%", ha="center", va="bottom",
                     fontsize=9, fontweight="bold")
-    annotate(bm, m_retro, m_sizes, m_rates)
-    annotate(bo, o_retro, o_sizes, o_rates)
-    ax.set(ylabel="Retrofit rate within group (%)",
-           ylim=(0, max(max(m_rates), max(o_rates)) * 1.25 + 5))
+    annotate(bm, m_retro, n_model, m_share)
+    annotate(bo, o_retro, n_obs, o_share)
+    ax.set(ylabel="Retrofit rate (% of all households)",
+           ylim=(0, max(max(m_share), max(o_share)) * 1.25 + 3))
     ax.set_xticks(x)
     ax.set_xticklabels(["never flooded",
-                        "flooded less\nthan a year",
-                        "flooded more\nthan a year"])
+                        "flooded less\nthan once a year",
+                        "flooded more\nthan once a year"])
     ax.legend(); ax.grid(alpha=0.3, axis="y")
     fig.tight_layout()
     return fig
@@ -1377,14 +1383,13 @@ def _page_results():
                 st.markdown(f"#### {title}")
                 st.pyplot(fig); plt.close(fig)
 
-    st.markdown("#### Per-category retrofit rate  (model vs survey)")
+    st.markdown("#### Retrofit share of all households  (model vs survey)")
+    n_model = sum(m_sizes); n_obs = sum(o_sizes)
     st.dataframe(pd.DataFrame({
-        "Group": ["never flooded", "flooded less than a year (1\u20134)",
-                  "flooded more than a year (5+)"],
-        "Model": [f"{k}/{nb} ({r:.1f}%)"
-                  for k, nb, r in zip(m_retro, m_sizes, m_rates)],
-        "Observed": [f"{k}/{nb} ({r:.1f}%)"
-                     for k, nb, r in zip(o_retro, o_sizes, o_rates)]}),
+        "Group": ["never flooded", "flooded less than once a year (1\u20134)",
+                  "flooded more than once a year (5+)"],
+        "Model": [f"{k}/{n_model} ({100*k/n_model:.1f}%)" for k in m_retro],
+        "Observed": [f"{k}/{n_obs} ({100*k/n_obs:.1f}%)" for k in o_retro]}),
         hide_index=True, use_container_width=True)
 
     # ---- full export: everything about the model + all results ----
