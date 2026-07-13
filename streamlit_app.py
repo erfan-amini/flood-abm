@@ -112,7 +112,7 @@ DEFAULTS = dict(
     # baseline against which the survey odds ratios were estimated; the raw
     # survey point-estimates (e.g. b0 ~ 0.23) assume the other channels held
     # at baseline, so they cannot all be defaults at once without saturating.
-    INITIAL_BELIEF=0.60,
+    INITIAL_BELIEF=0.30,
     # Channel 1 - experience.  Survey anchor: LAMBDA_FLOOD 1.52 (owner per-flood
     # odds ratio).  On a flood, the base factor is amplified by a DAMAGE
     # multiplier that scales with how deep the flood is at the house: a
@@ -121,6 +121,7 @@ DEFAULTS = dict(
     # damage) to LAMBDA_DAMAGE_MAX (total failure at TOTAL_FAILURE_DEPTH).
     LAMBDA_FLOOD=1.20, LAMBDA_DAMAGE_MAX=1.10,
     TOTAL_FAILURE_DEPTH=0.01,
+    ENABLE_FLOOD_DECAY=False,   # off => every flood keeps full lambda_flood (no decay)
     # depth-damage curve: (depth, damage_fraction) points, interpolated
     # linearly.  D(0)=0 and D(TOTAL_FAILURE_DEPTH)=1 by construction.
     DEPTH_DAMAGE_CURVE=[(0.0, 0.0), (0.0125, 0.40), (0.025, 0.70),
@@ -136,12 +137,12 @@ DEFAULTS = dict(
     # threshold; tune upward toward the survey anchors as needed.
     LAMBDA_INFO=1.30, LAMBDA_RESPONSE=1.50,
     P_TRUSTED_INFO=0.46, P_FORECAST_PREP=0.78,
-    ENABLE_INFO_CHANNEL=True,   # off => information effect is zero (lambdas -> 1)
+    ENABLE_INFO_CHANNEL=False,  # off => information effect is zero (lambdas -> 1)
     # PMT threshold
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
     # from Uniform(LOW, HIGH); when OFF, every household uses MEAN (a single
     # point value).
-    PMT_THRESHOLD_MEAN=0.85,
+    PMT_THRESHOLD_MEAN=1.00,
     PMT_THRESHOLD_LOW=0.90, PMT_THRESHOLD_HIGH=1.00,
     ENABLE_THRESHOLD_HET=True,
     # Flood (GEV)
@@ -486,13 +487,17 @@ class HouseholdAgent(mesa.Agent):
             # linear habituation weight w in [0, 1] on (lambda_flood - 1):
             # full (w=1) through flood FLOOD_DECAY_START, linear decay to 0 at
             # flood FLOOD_DECAY_END, and 0 (no effect) from FLOOD_DECAY_END on.
-            lo, hi = FLOOD_DECAY_START, FLOOD_DECAY_END
-            if k <= lo:
+            # If the decay is switched off, every flood keeps full lambda_flood.
+            if not m.ENABLE_FLOOD_DECAY:
                 w = 1.0
-            elif k >= hi:
-                w = 0.0
             else:
-                w = (hi - k) / (hi - lo)
+                lo, hi = FLOOD_DECAY_START, FLOOD_DECAY_END
+                if k <= lo:
+                    w = 1.0
+                elif k >= hi:
+                    w = 0.0
+                else:
+                    w = (hi - k) / (hi - lo)
             lambda_flood_eff = 1.0 + (m.LAMBDA_FLOOD - 1.0) * w
             depth = flood_level - self.z
             D = damage_fraction(depth, m.DEPTH_DAMAGE_CURVE, m.TOTAL_FAILURE_DEPTH)
@@ -888,6 +893,7 @@ def _collect_params():
         LAMBDA_DAMAGE_MAX=g("LAMBDA_DAMAGE_MAX", D["LAMBDA_DAMAGE_MAX"]),
         TOTAL_FAILURE_DEPTH=g("TOTAL_FAILURE_DEPTH", D["TOTAL_FAILURE_DEPTH"]),
         DEPTH_DAMAGE_CURVE=D["DEPTH_DAMAGE_CURVE"],
+        ENABLE_FLOOD_DECAY=g("ENABLE_FLOOD_DECAY", D["ENABLE_FLOOD_DECAY"]),
         LAMBDA_OBSERVATION=g("LAMBDA_OBSERVATION", D["LAMBDA_OBSERVATION"]),
         LAMBDA_SIMILARITY=g("LAMBDA_SIMILARITY", D["LAMBDA_SIMILARITY"]),
         SIM_THRESHOLD=g("SIM_THRESHOLD", D["SIM_THRESHOLD"]),
@@ -1039,6 +1045,15 @@ def _page_settings():
         nb("Total-failure depth", "TOTAL_FAILURE_DEPTH", 0.005, "%.3f", 0.001, None,
            help="Flood depth at which damage is total (D=1). Depth is "
                 "flood level minus house elevation.")
+        st.checkbox(
+            "Degrade flood effect after repeated floods",
+            value=bool(_P.get("p_ENABLE_FLOOD_DECAY", D["ENABLE_FLOOD_DECAY"])),
+            key="p_ENABLE_FLOOD_DECAY",
+            on_change=_sync, args=("p_ENABLE_FLOOD_DECAY",),
+            help="On = \u03bb_flood decays linearly from the 5th to the 16th flood "
+                 "(habituation), so the 16th and later floods have no effect. "
+                 "Off = every flood keeps full \u03bb_flood.")
+        _P["p_ENABLE_FLOOD_DECAY"] = S["p_ENABLE_FLOOD_DECAY"]
     with ch2:
         _sec("Channel 2 \u00b7 Proximity",
              "Social learning from retrofitted neighbours, stronger if similar.", C_CH2)
@@ -1229,8 +1244,7 @@ def _fig_comparison(model, m_rates, m_retro, m_sizes, o_rates, o_retro, o_sizes)
                     fontsize=9, fontweight="bold")
     annotate(bm, m_retro, n_model, m_share)
     annotate(bo, o_retro, n_obs, o_share)
-    ax.set(ylabel="Retrofitted (% of all households)",
-           ylim=(0, max(max(m_share), max(o_share)) * 1.25 + 3))
+    ax.set(ylabel="Retrofitted (% of all households)", ylim=(0, 50))
     ax.set_xticks(x)
     ax.set_xticklabels(["never flooded",
                         "flooded less\nthan once a year",
