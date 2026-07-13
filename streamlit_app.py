@@ -325,34 +325,31 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
 
     max_per = base + (1 if remainder > 0 else 0)
     nh_rows, nh_cols = dims(max_per)
-    spacing = _DIAGONAL_SAFETY * distance_threshold / np.sqrt(2) * node_spacing_mult
-    # Independent x/y spacing so the layout can fill the whole domain even when
-    # the grid is tall and narrow (more rows than cols) or the reverse. Both
-    # start from the same base spacing (kept <= threshold/sqrt(2) so diagonal
-    # neighbours stay connected); each axis is then scaled to fill its extent.
-    sx = sy = spacing
-    gap_x = (n_connectors + 1) * sx
-    gap_y = (n_connectors + 1) * sy
-    nh_w = (nh_cols - 1) * sx
-    nh_h = (nh_rows - 1) * sy
-    total_w = grid_cols * nh_w + (grid_cols - 1) * gap_x
-    total_h = grid_rows * nh_h + (grid_rows - 1) * gap_y
-
-    # Scale each axis independently to fill (or fit) the available extent
-    # (layout_spread = fraction of the domain to fill). The x and y spacings may
-    # differ so a non-square grid still spreads across the domain. Cap each
-    # scaled spacing at the distance threshold so within- and between-node links
-    # are preserved.
-    def fill(total, span):
-        return (span / total) if total > 0 else 1.0
-    sx *= fill(total_w, layout_spread)
-    sy *= fill(total_h, layout_spread)
-    cap = _DIAGONAL_SAFETY * distance_threshold
-    sx = min(sx, cap); sy = min(sy, cap)
-    gap_x = (n_connectors + 1) * sx
-    gap_y = (n_connectors + 1) * sy
-    nh_w = (nh_cols - 1) * sx
-    nh_h = (nh_rows - 1) * sy
+    # Node spacing is ISOTROPIC (sx == sy) and kept at/under threshold/sqrt(2)
+    # so every neighbour within a block -- orthogonal AND diagonal -- links up.
+    # Distorting this (anisotropic node spacing) breaks diagonal/one-direction
+    # links, so we never stretch the nodes themselves. The layout fills the
+    # domain by spreading the GAPS between neighbourhoods instead.
+    s = _DIAGONAL_SAFETY * distance_threshold / np.sqrt(2) * node_spacing_mult
+    s = min(s, _DIAGONAL_SAFETY * distance_threshold / np.sqrt(2))
+    sx = sy = s
+    nh_w = (nh_cols - 1) * s
+    nh_h = (nh_rows - 1) * s
+    base_gap = (n_connectors + 1) * s
+    # Choose inter-neighbourhood gaps so the whole layout fills layout_spread of
+    # the domain on each axis. Gaps are >= base_gap (never overlap) so connector
+    # chains still fit, and can grow independently on x and y to fill.
+    def gap_for(span, n_blocks, block_extent):
+        if n_blocks <= 1:
+            return base_gap
+        want = (span - n_blocks * block_extent) / (n_blocks - 1)
+        # A connector chain of n_connectors can bridge at most
+        # (n_connectors + 1) hops of <= threshold each; keep the gap within that
+        # so the chain always links both neighbourhoods (connectivity > spread).
+        max_gap = (n_connectors + 1) * _DIAGONAL_SAFETY * distance_threshold
+        return min(max(base_gap, want), max_gap)
+    gap_x = gap_for(layout_spread, grid_cols, nh_w)
+    gap_y = gap_for(layout_spread, grid_rows, nh_h)
     total_w = grid_cols * nh_w + (grid_cols - 1) * gap_x
     total_h = grid_rows * nh_h + (grid_rows - 1) * gap_y
 
@@ -380,6 +377,8 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
     # so the connector sits in line with real nodes, not between them.
     mid_row = (nh_rows - 1) // 2
     mid_col = (nh_cols - 1) // 2
+    hop_x = gap_x / (n_connectors + 1)   # even hop across the horizontal gap
+    hop_y = gap_y / (n_connectors + 1)
     for gr in range(grid_rows):
         for gc in range(grid_cols - 1):
             lox = margin_x + gc * (nh_w + gap_x)
@@ -387,7 +386,7 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
             rex = lox + nh_w
             my = loy + mid_row * sy      # snap to a node row
             for c in range(n_connectors):
-                coords.append([rex + (c + 1) * sx, my])
+                coords.append([rex + (c + 1) * hop_x, my])
     # Vertical connectors: link neighbourhoods top<->bottom, aligned to an
     # actual node COLUMN (the middle column) for the same reason.
     for gr in range(grid_rows - 1):
@@ -397,7 +396,7 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
             tey = boy + nh_h
             mx = box + mid_col * sx      # snap to a node column
             for c in range(n_connectors):
-                coords.append([mx, tey + (c + 1) * sy])
+                coords.append([mx, tey + (c + 1) * hop_y])
     coords = np.clip(np.array(coords), _COORD_MIN, _COORD_MAX)
     return coords[:, 0], coords[:, 1]
 
