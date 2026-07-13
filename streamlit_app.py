@@ -1110,7 +1110,7 @@ def _fig_comparison(model, cum, obs):
     ax.set(xlabel="Flood experience (cumulative, at most k)",
            ylabel="Retrofit rate (%)",
            ylim=(0, max(max(cum), max(obs)) * 1.25 + 1))
-    ax.set_xticks(x); ax.set_xticklabels(["0", "\u2264 4", "5+ (all)"])
+    ax.set_xticks(x); ax.set_xticklabels(["0", "\u2264 4", "all"])
     ax.legend(); ax.grid(alpha=0.3, axis="y")
     fig.tight_layout()
     return fig
@@ -1205,10 +1205,14 @@ def _fig_spatial(model):
 
 def _config_chips(p):
     import streamlit as st
+    if p.get("ENABLE_THRESHOLD_HET", False):
+        theta = f"{p['PMT_THRESHOLD_LOW']:.2f}\u2013{p['PMT_THRESHOLD_HIGH']:.2f}"
+    else:
+        theta = f"{p['PMT_THRESHOLD_MEAN']:.2f}"
     chips = [
         ("Agents", p["N_AGENTS"]), ("Steps", p["TIME_STEPS"]),
         ("P(H\u2081)", f"{p['INITIAL_BELIEF']:.2f}"),
-        ("\u03b8", f"{p['PMT_THRESHOLD_MEAN']:.2f}"),
+        ("\u03b8", theta),
         ("\u03bb_flood\u00d7\u03bb_dmg", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_DAMAGE_MAX']:.2f}"),
         ("\u03bb_obs\u00d7\u03bb_sim", f"{p['LAMBDA_OBSERVATION']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
         ("\u03bb_info\u00d7\u03bb_resp", f"{p['LAMBDA_INFO']:.2f}\u00d7{p['LAMBDA_RESPONSE']:.2f}"),
@@ -1267,7 +1271,7 @@ def _page_results():
 
     st.markdown("#### Cumulative rates  (model vs survey)")
     st.dataframe(pd.DataFrame({
-        "Bin (at most k floods)": ["0", "\u2264 4", "5+ (all)"],
+        "Bin (at most k floods)": ["0", "\u2264 4", "all"],
         "Model (%)": [f"{r:.1f}" for r in cum],
         "Observed (%)": [f"{o:.1f}" for o in obs]}),
         hide_index=True, use_container_width=True)
