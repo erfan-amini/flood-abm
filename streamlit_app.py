@@ -92,7 +92,7 @@ DEFAULTS = dict(
     # Simulation
     TIME_STEPS=75, RANDOM_SEED=42,
     # Spatial / population
-    N_AGENTS=200, GRID_ROWS=3, GRID_COLS=4, N_CONNECTORS=2,
+    N_AGENTS=208, GRID_ROWS=3, GRID_COLS=4, N_CONNECTORS=2,
     SLOPE=1.0, NOISE_FACTOR=0.05,
     # Attributes
     ENABLE_HETEROGENEITY=True, N_ATTRIBUTES=2, N_CLASSES=3,
@@ -109,8 +109,8 @@ DEFAULTS = dict(
     # depth-damage curve maps the flood depth to a damage fraction D in [0, 1],
     # and lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D grows from 1 (no
     # damage) to LAMBDA_DAMAGE_MAX (total failure at TOTAL_FAILURE_DEPTH).
-    LAMBDA_FLOOD=1.50, LAMBDA_DAMAGE_MAX=1.10,
-    TOTAL_FAILURE_DEPTH=0.05,
+    LAMBDA_FLOOD=1.20, LAMBDA_DAMAGE_MAX=1.10,
+    TOTAL_FAILURE_DEPTH=0.01,
     # depth-damage curve: (depth, damage_fraction) points, interpolated
     # linearly.  D(0)=0 and D(TOTAL_FAILURE_DEPTH)=1 by construction.
     DEPTH_DAMAGE_CURVE=[(0.0, 0.0), (0.0125, 0.40), (0.025, 0.70),
@@ -118,13 +118,13 @@ DEFAULTS = dict(
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_OBSERVATION=1.20, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
+    LAMBDA_OBSERVATION=3.00, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
     # one-time t=0 informational prior does not by itself push belief over the
     # threshold; tune upward toward the survey anchors as needed.
-    LAMBDA_INFO=1.15, LAMBDA_RESPONSE=1.10,
+    LAMBDA_INFO=1.30, LAMBDA_RESPONSE=1.50,
     P_TRUSTED_INFO=0.48, P_FORECAST_PREP=0.65,
     # PMT threshold
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
@@ -135,7 +135,7 @@ DEFAULTS = dict(
     ENABLE_THRESHOLD_HET=True,
     # Flood (GEV)
     RETURN_PERIODS=[10, 20, 50, 100],
-    FLOOD_LEVELS=[0.05, 0.2, 0.4, 0.6],
+    FLOOD_LEVELS=[0.05, 0.1, 0.2, 0.4],
     # Observed cumulative "at most k" retrofit rates (%)    OBSERVED_CUM_LABELS=["0", "\u22644", "5+"],
     OBSERVED_CUM_RATES=[18.0, 22.3, 27.4],
     OBSERVED_CUM_MAX=[0, 4, np.inf],   # upper flood-count bound for each cumulative bin
@@ -660,27 +660,29 @@ def _inject_css():
           display:flex; align-items:center; gap:0; padding: 0.6rem 0.85rem; margin:0; width:100%;
           border-radius: 10px; cursor:pointer; background: transparent;
           transition: background-color .2s ease, transform .2s ease, box-shadow .2s ease; }}
-      /* Hide the radio glyph/circle entirely, across all Streamlit builds,
-         without ever hiding the label text. Strategy: the text always lives
-         in a stMarkdownContainer; the glyph is everything else in the label
-         (an <svg>, a baseweb radio wrapper, or a bare styled <div>). We hide
-         the raw input, any baseweb radio, any svg, and any direct-child div
-         of the label that does NOT contain the markdown text. */
-      section[data-testid="stSidebar"] [role="radiogroup"] input {{ display:none !important; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] label svg {{ display:none !important; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] label [data-baseweb="radio"] {{
+      /* Hide the radio glyph/circle. Verified DOM (Streamlit 1.59): each
+         option is label[data-testid="stRadioOption"] whose flex row holds the
+         glyph container (a 16px round div, no text) and the
+         div[data-testid="stMarkdownContainer"] (the text). We hide the input
+         and the glyph via several independent selectors so at least one wins
+         regardless of CSS ordering / build differences. */
+      section[data-testid="stSidebar"] [data-testid="stRadioOption"] input {{
           display:none !important; }}
-      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:not(:has([data-testid="stMarkdownContainer"])) {{
+      /* (a) any round element inside an option that is not the text */
+      section[data-testid="stSidebar"] [data-testid="stRadioOption"]
+          div:not([data-testid="stMarkdownContainer"]):not(:has([data-testid="stMarkdownContainer"])) {{
           display:none !important; width:0 !important; height:0 !important;
-          min-width:0 !important; margin:0 !important; padding:0 !important;
-          border:0 !important; }}
-      /* the first baseweb layer inside the label often carries a fixed-width
-         slot for the glyph; collapse it but keep the text child visible. */
-      section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child {{
-          min-width:0 !important; }}
-      /* always keep the text container visible. */
-      section[data-testid="stSidebar"] [role="radiogroup"] label [data-testid="stMarkdownContainer"] {{
-          display:block !important; visibility:visible !important; opacity:1 !important; }}
+          min-width:0 !important; border:0 !important; }}
+      /* (b) the glyph is the FIRST child of the row; the text is the second.
+         Hide the first-child div of the row that wraps the markdown text. */
+      section[data-testid="stSidebar"] [data-testid="stRadioOption"]
+          div:has(> [data-testid="stMarkdownContainer"]) > div:first-child {{
+          display:none !important; }}
+      /* (c) keep the text visible no matter what. */
+      section[data-testid="stSidebar"] [data-testid="stRadioOption"]
+          [data-testid="stMarkdownContainer"] {{
+          display:block !important; visibility:visible !important;
+          opacity:1 !important; width:auto !important; }}
       /* Force the label text visible and white. */
       section[data-testid="stSidebar"] [role="radiogroup"] > label,
       section[data-testid="stSidebar"] [role="radiogroup"] > label div,
