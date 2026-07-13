@@ -51,7 +51,7 @@ Survey-anchored defaults (NYC Flood Vulnerability Survey, cleaned):
   total_failure_depth 0.05  (depth at which damage is total, D = 1)
   lambda_response   3.20  (precautionary-action-on-forecast odds ratio)
   P(trusted info) 0.46 ; P(prepared on forecast | trusted info) 0.78
-  Cumulative "at most k" retrofit targets: 18.0 / 22.3 / 27.4 %
+  Per-category retrofit rate targets (never / 1-4 / 5+ floods)
 
 References
 ----------
@@ -140,12 +140,14 @@ DEFAULTS = dict(
     # Flood (GEV)
     RETURN_PERIODS=[10, 20, 50, 100],
     FLOOD_LEVELS=[0.05, 0.1, 0.2, 0.4],
-    # Observed cumulative "at most k" retrofit rates (%)    OBSERVED_CUM_LABELS=["0", "\u22644", "5+"],
-    OBSERVED_CUM_RATES=[18.2, 22.5, 27.3],
-    # observed retrofit COUNTS in each cumulative bin, as a fraction of the
-    # whole sample (denominator = N). Shown as x/N inside the plot-(b) bars.
-    OBSERVED_CUM_COUNTS=[38, 47, 57],
-    OBSERVED_CUM_MAX=[0, 4, np.inf],   # upper flood-count bound for each cumulative bin
+    # DISTINCT flood-experience bins (inclusive flood-count ranges) and the
+    # survey per-category retrofit rates + counts within each bin. Edit the
+    # observed values to match your questionnaire analysis.
+    #   never flooded (0) | flooded < a year (1-4) | flooded > a year (5+)
+    OBSERVED_BIN_EDGES=[(0, 0), (1, 4), (5, np.inf)],
+    OBSERVED_BIN_RATES=[35.0, 60.0, 89.7],     # per-category retrofit rate (%)
+    OBSERVED_BIN_RETRO=[35, 48, 26],           # retrofit count within each bin
+    OBSERVED_BIN_SIZES=[100, 80, 29],          # number of survey households in bin
 )
 
 
@@ -286,7 +288,12 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols, n_connec
     total_w = grid_cols * nh_w + (grid_cols - 1) * gap
     total_h = grid_rows * nh_h + (grid_rows - 1) * gap
 
-    if total_w > _MAX_EXTENT or total_h > _MAX_EXTENT:
+    # Scale the spacing so the whole layout fits the available extent AND fills
+    # it: shrink if it overflows, grow if it is smaller than the canvas. Using
+    # the same isotropic scale on both axes keeps neighbourhoods square and
+    # preserves the minimum spacing ratio used for connectivity. The limiting
+    # axis (whichever is relatively largest) sets the scale.
+    if total_w > 0 and total_h > 0:
         scale = min(_MAX_EXTENT / total_w, _MAX_EXTENT / total_h)
         spacing *= scale
         nh_w = (nh_cols - 1) * spacing
@@ -295,7 +302,9 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols, n_connec
         total_w = grid_cols * nh_w + (grid_cols - 1) * gap
         total_h = grid_rows * nh_h + (grid_rows - 1) * gap
 
-    margin_x = _MIN_MARGIN
+    # Centre the layout in both x and y (previously x was left-aligned, which
+    # left tall/narrow grids hugging the left edge).
+    margin_x = max(_MIN_MARGIN, (1.0 - total_w) / 2)
     margin_y = max(_MIN_MARGIN, (1.0 - total_h) / 2)
     coords = []
     for gr in range(grid_rows):
@@ -377,20 +386,22 @@ def identify_neighborhoods(positions, eps, min_samples):
 # CUMULATIVE FLOOD-BIN HELPERS
 # ============================================================================
 
-def cumulative_model_rates(agents, cum_max):
-    """For each cumulative flood bound in cum_max, return the retrofit rate as a
-    percentage of the WHOLE sample (denominator = number of agents), plus the
-    raw retrofit count in that cumulative bin.  Returns (rates, counts, n)."""
+def category_model_rates(agents, bin_edges):
+    """Per-category retrofit rate for DISTINCT flood-count bins. bin_edges is a
+    list of (lo, hi) inclusive flood-count ranges. For each bin, return the
+    retrofit rate WITHIN the bin (retrofitted / households in the bin), the
+    retrofit count, and the bin size. Returns (rates, retro_counts, bin_sizes)."""
     counts = np.array([a.flood_count for a in agents])
     retro = np.array([1 if a.is_retrofitted else 0 for a in agents])
-    n = len(agents)
-    rates, ncounts = [], []
-    for hi in cum_max:
-        m = counts <= hi
+    rates, rcounts, sizes = [], [], []
+    for lo, hi in bin_edges:
+        m = (counts >= lo) & (counts <= hi)
+        nb = int(m.sum())
         k = int(retro[m].sum())
-        ncounts.append(k)
-        rates.append(100.0 * k / n if n else 0.0)
-    return rates, ncounts, n
+        sizes.append(nb)
+        rcounts.append(k)
+        rates.append(100.0 * k / nb if nb else 0.0)
+    return rates, rcounts, sizes
 
 
 # ============================================================================
@@ -1117,32 +1128,35 @@ def _fig_elevation_comparison(model):
     return fig
 
 
-def _fig_comparison(model, model_rates, model_counts, n, obs_rates, obs_counts):
-    """Model vs observed retrofit share of the whole sample, for three
-    cumulative flood-experience groups. Bar height = count / N (%); the count
-    x/N is printed inside each bar in white."""
+def _fig_comparison(model, m_rates, m_retro, m_sizes, o_rates, o_retro, o_sizes):
+    """Model vs observed PER-CATEGORY retrofit rate for three DISTINCT
+    flood-experience groups (never flooded / flooded <a year / flooded >a year).
+    Bar height = retrofitted / households in that group (%); the ratio
+    (retrofitted / group size) is printed inside each bar in white."""
     fig, ax = plt.subplots(figsize=(7, 4.4))
     x = np.arange(3); w = 0.38
-    bm = ax.bar(x - w / 2, model_rates, w, label="Model",
+    bm = ax.bar(x - w / 2, m_rates, w, label="Model",
                 color=CLR_MODEL, edgecolor="black")
-    bo = ax.bar(x + w / 2, obs_rates, w, label="Observed",
+    bo = ax.bar(x + w / 2, o_rates, w, label="Observed",
                 color=CLR_OBS, edgecolor="black")
-    # x/N inside each bar (white), percentage above each bar
-    def annotate(bars, counts, rates):
-        for bar, c, r in zip(bars, counts, rates):
+    # k/n_bin inside each bar (white), per-category percentage above
+    def annotate(bars, retro, sizes, rates):
+        for bar, k, nb, r in zip(bars, retro, sizes, rates):
             h = bar.get_height()
             cx = bar.get_x() + bar.get_width() / 2
-            if h > 3:
-                ax.text(cx, h / 2, f"{c}/{n}", ha="center", va="center",
+            if h > 5:
+                ax.text(cx, h / 2, f"{k}/{nb}", ha="center", va="center",
                         fontsize=10.5, fontweight="bold", color="white")
-            ax.text(cx, h + 1, f"{r:.0f}%", ha="center", va="bottom",
+            ax.text(cx, h + 1.5, f"{r:.0f}%", ha="center", va="bottom",
                     fontsize=9, fontweight="bold")
-    annotate(bm, model_counts, model_rates)
-    annotate(bo, obs_counts, obs_rates)
-    ax.set(ylabel="Retrofit rate (% of all households)",
-           ylim=(0, max(max(model_rates), max(obs_rates)) * 1.28 + 1))
+    annotate(bm, m_retro, m_sizes, m_rates)
+    annotate(bo, o_retro, o_sizes, o_rates)
+    ax.set(ylabel="Retrofit rate within group (%)",
+           ylim=(0, max(max(m_rates), max(o_rates)) * 1.25 + 5))
     ax.set_xticks(x)
-    ax.set_xticklabels(["never flooded", "less than one\nflood a year", "overall"])
+    ax.set_xticklabels(["never flooded",
+                        "flooded less\nthan a year",
+                        "flooded more\nthan a year"])
     ax.legend(); ax.grid(alpha=0.3, axis="y")
     fig.tight_layout()
     return fig
@@ -1267,9 +1281,10 @@ def _page_results():
     _config_chips(p)
 
     mdf = st.session_state["model_df"]
-    model_rates, model_counts, n_sample = st.session_state["cum_rates"]
-    obs_rates = p["OBSERVED_CUM_RATES"]
-    obs_counts = p.get("OBSERVED_CUM_COUNTS", [0, 0, 0])
+    m_rates, m_retro, m_sizes = st.session_state["cum_rates"]
+    o_rates = p["OBSERVED_BIN_RATES"]
+    o_retro = p.get("OBSERVED_BIN_RETRO", [0, 0, 0])
+    o_sizes = p.get("OBSERVED_BIN_SIZES", [0, 0, 0])
 
     r1c1, r1c2, r1c3, r1c4 = st.columns(4)
     for col, lab, val in [
@@ -1289,7 +1304,7 @@ def _page_results():
     # ---- six figures in a 3 x 2 grid ----
     figs = [
         ("(a)  Adoption over time & flood levels", _fig_adoption_flood(model)),
-        ("(b)  Model vs observed",    _fig_comparison(model, model_rates, model_counts, n_sample, obs_rates, obs_counts)),
+        ("(b)  Model vs observed",    _fig_comparison(model, m_rates, m_retro, m_sizes, o_rates, o_retro, o_sizes)),
         ("(c)  Retrofit adoption by elevation",    _fig_elevation_comparison(model)),
         ("(d)  Bayesian belief evolution",         _fig_belief_evolution(model)),
         ("(e)  Social network",                    _fig_network(model)),
@@ -1302,29 +1317,18 @@ def _page_results():
                 st.markdown(f"#### {title}")
                 st.pyplot(fig); plt.close(fig)
 
-    st.markdown("#### Retrofit share of all households  (model vs survey)")
+    st.markdown("#### Per-category retrofit rate  (model vs survey)")
     st.dataframe(pd.DataFrame({
-        "Group": ["never flooded", "less than one flood a year", "overall"],
-        "Model": [f"{c}/{n_sample} ({r:.1f}%)"
-                  for c, r in zip(model_counts, model_rates)],
-        "Observed": [f"{c}/{n_sample} ({r:.1f}%)"
-                     for c, r in zip(obs_counts, obs_rates)]}),
+        "Group": ["never flooded", "flooded less than a year (1\u20134)",
+                  "flooded more than a year (5+)"],
+        "Model": [f"{k}/{nb} ({r:.1f}%)"
+                  for k, nb, r in zip(m_retro, m_sizes, m_rates)],
+        "Observed": [f"{k}/{nb} ({r:.1f}%)"
+                     for k, nb, r in zip(o_retro, o_sizes, o_rates)]}),
         hide_index=True, use_container_width=True)
 
-    # ---- data export (as in the previous app) ----
-    st.divider()
-    st.markdown("#### \U0001F4E5 Export data")
-    e1, e2 = st.columns(2)
-    with e1:
-        st.download_button("Download agent data (CSV)",
-                           st.session_state["agent_df"].to_csv(),
-                           "agent_data.csv", "text/csv", use_container_width=True)
-    with e2:
-        st.download_button("Download model data (CSV)",
-                           mdf.to_csv(), "model_data.csv", "text/csv",
-                           use_container_width=True)
-
     # ---- full export: everything about the model + all results ----
+    st.divider()
     st.markdown("#### \U0001F4E6 Full export")
     st.caption("One CSV with the model settings and the complete simulation "
                "record \u2014 every agent at every step, plus the per-step model "
@@ -2134,8 +2138,8 @@ def _run_app():
             ss["model_obj"] = model
             ss["model_df"] = model.get_model_dataframe()
             ss["agent_df"] = model.get_agent_dataframe()
-            ss["cum_rates"] = cumulative_model_rates(
-                list(model.agents), params["OBSERVED_CUM_MAX"])
+            ss["cum_rates"] = category_model_rates(
+                list(model.agents), params["OBSERVED_BIN_EDGES"])
             ss["final_positions"] = np.array(
                 [[a.x, a.y, a.z, int(a.is_retrofitted), int(a.flood_count),
                   a.belief, a.pmt_threshold, int(a.neighborhood_id)]
@@ -2182,8 +2186,8 @@ if _running_in_streamlit():
 elif __name__ == "__main__":
     m = FloodAdaptationModel(dict(DEFAULTS), seed=42)
     m.run()
-    rates, counts, n = cumulative_model_rates(list(m.agents), DEFAULTS["OBSERVED_CUM_MAX"])
-    print("cumulative model rates 0/<=4/all (% of sample):", ["%.1f" % r for r in rates])
-    print("counts:", counts, "of", n)
+    rates, retro, sizes = category_model_rates(list(m.agents), DEFAULTS["OBSERVED_BIN_EDGES"])
+    print("per-category model rates (never/1-4/5+):", ["%.1f" % r for r in rates])
+    print("retro/size:", list(zip(retro, sizes)))
     print("final pct retrofitted: %.1f%%" %
           m.get_model_dataframe()["pct_retrofitted"].iloc[-1])
