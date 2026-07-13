@@ -96,7 +96,7 @@ DEFAULTS = dict(
     # Simulation
     TIME_STEPS=75, RANDOM_SEED=42,
     # Spatial / population
-    N_AGENTS=209, GRID_ROWS=3, GRID_COLS=3, N_CONNECTORS=1,
+    N_AGENTS=209, GRID_ROWS=4, GRID_COLS=4, N_CONNECTORS=1,
     # Inner layout of agents WITHIN each neighborhood. 0 = auto: use the
     # inverse of the neighborhood grid (so a 4x3 neighborhood grid gives ~3x4
     # inner blocks). Set a positive value to fix the inner rows / cols.
@@ -141,7 +141,7 @@ DEFAULTS = dict(
     # threshold; tune upward toward the survey anchors as needed.
     LAMBDA_INFO=1.30, LAMBDA_RESPONSE=1.50,
     P_TRUSTED_INFO=0.46, P_FORECAST_PREP=0.78,
-    ENABLE_INFO_CHANNEL=False,  # off => information effect is zero (lambdas -> 1)
+    ENABLE_INFO_CHANNEL=True,   # on => information channel active
     # PMT threshold
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
     # from Uniform(LOW, HIGH); when OFF, every household uses MEAN (a single
@@ -395,7 +395,9 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
     total_h = grid_rows * nh_h + (grid_rows - 1) * gap_y
 
     # Centre the layout in both x and y.
-    margin_x = max(_MIN_MARGIN, (1.0 - total_w) / 2)
+    # Left-adjust the settlement horizontally (flush to the left margin) while
+    # keeping it vertically centred.
+    margin_x = _MIN_MARGIN
     margin_y = max(_MIN_MARGIN, (1.0 - total_h) / 2)
     # Distribute the leftover agents (remainder) EVENLY across neighbourhoods
     # rather than piling them onto the first-indexed ones: pick `remainder`
@@ -1249,15 +1251,6 @@ def _page_settings():
             st.caption("Layout of agents inside each neighbourhood. "
                        "0 = auto (inverse of the neighbourhood grid).")
             nb("Elevation Noise", "NOISE_FACTOR", 0.01, "%.2f", 0.0, 1.0)
-            sp1, sp2 = st.columns(2)
-            with sp1:
-                nb("Layout Spread", "LAYOUT_SPREAD", 0.02, "%.2f", 0.30, 0.98,
-                   help="Fraction of the domain the households fill. Higher = "
-                        "more distance, spread toward the edges.")
-            with sp2:
-                nb("Node Spacing", "NODE_SPACING_MULT", 0.05, "%.2f", 0.5, 3.0,
-                   help="Multiplier on the distance between adjacent "
-                        "households. Higher = more space between nodes.")
         with s3:
             _sec("Network", "Who is connected, and cluster detection.", C_MINOR)
             nb("Distance Threshold", "DISTANCE_THRESHOLD", 0.01, "%.2f", 0.01, 0.5,
