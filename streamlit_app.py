@@ -151,6 +151,16 @@ DEFAULTS = dict(
 )
 
 
+# Flood-experience habituation: the base factor lambda_flood is full for the
+# first FLOOD_DECAY_START floods, decays linearly toward 1 between the
+# FLOOD_DECAY_START-th flood and the FLOOD_DECAY_END-th flood, and equals 1
+# (no belief update from experience) from the FLOOD_DECAY_END-th flood onward.
+# Defaults: full through flood 5, linear decay over floods 6-15, and the 16th
+# (and later) floods have no effect.
+FLOOD_DECAY_START = 5     # last flood at full lambda_flood
+FLOOD_DECAY_END = 16      # first flood with no effect (lambda_flood -> 1)
+
+
 # ============================================================================
 # BAYESIAN UPDATE  (odds form; Jaynes, 2003; Kass & Raftery, 1995)
 # ============================================================================
@@ -282,28 +292,36 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols, n_connec
     max_per = base + (1 if remainder > 0 else 0)
     nh_rows, nh_cols = dims(max_per)
     spacing = _DIAGONAL_SAFETY * distance_threshold / np.sqrt(2)
-    nh_w = (nh_cols - 1) * spacing
-    nh_h = (nh_rows - 1) * spacing
-    gap = (n_connectors + 1) * spacing
-    total_w = grid_cols * nh_w + (grid_cols - 1) * gap
-    total_h = grid_rows * nh_h + (grid_rows - 1) * gap
+    # Independent x/y spacing so the layout can fill the whole domain even when
+    # the grid is tall and narrow (more rows than cols) or the reverse. Both
+    # start from the same base spacing (kept <= threshold/sqrt(2) so diagonal
+    # neighbours stay connected); each axis is then scaled to fill its extent.
+    sx = sy = spacing
+    gap_x = (n_connectors + 1) * sx
+    gap_y = (n_connectors + 1) * sy
+    nh_w = (nh_cols - 1) * sx
+    nh_h = (nh_rows - 1) * sy
+    total_w = grid_cols * nh_w + (grid_cols - 1) * gap_x
+    total_h = grid_rows * nh_h + (grid_rows - 1) * gap_y
 
-    # Scale the spacing so the whole layout fits the available extent AND fills
-    # it: shrink if it overflows, grow if it is smaller than the canvas. Using
-    # the same isotropic scale on both axes keeps neighbourhoods square and
-    # preserves the minimum spacing ratio used for connectivity. The limiting
-    # axis (whichever is relatively largest) sets the scale.
-    if total_w > 0 and total_h > 0:
-        scale = min(_MAX_EXTENT / total_w, _MAX_EXTENT / total_h)
-        spacing *= scale
-        nh_w = (nh_cols - 1) * spacing
-        nh_h = (nh_rows - 1) * spacing
-        gap = (n_connectors + 1) * spacing
-        total_w = grid_cols * nh_w + (grid_cols - 1) * gap
-        total_h = grid_rows * nh_h + (grid_rows - 1) * gap
+    # Scale each axis independently to fill (or fit) the available extent. The
+    # x and y spacings may differ so a non-square grid still spreads across the
+    # domain. Cap each scaled spacing at the distance threshold so within- and
+    # between-node links are preserved.
+    def fill(total, span):
+        return (span / total) if total > 0 else 1.0
+    sx *= fill(total_w, _MAX_EXTENT)
+    sy *= fill(total_h, _MAX_EXTENT)
+    cap = _DIAGONAL_SAFETY * distance_threshold
+    sx = min(sx, cap); sy = min(sy, cap)
+    gap_x = (n_connectors + 1) * sx
+    gap_y = (n_connectors + 1) * sy
+    nh_w = (nh_cols - 1) * sx
+    nh_h = (nh_rows - 1) * sy
+    total_w = grid_cols * nh_w + (grid_cols - 1) * gap_x
+    total_h = grid_rows * nh_h + (grid_rows - 1) * gap_y
 
-    # Centre the layout in both x and y (previously x was left-aligned, which
-    # left tall/narrow grids hugging the left edge).
+    # Centre the layout in both x and y.
     margin_x = max(_MIN_MARGIN, (1.0 - total_w) / 2)
     margin_y = max(_MIN_MARGIN, (1.0 - total_h) / 2)
     coords = []
@@ -311,33 +329,33 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols, n_connec
         for gc in range(grid_cols):
             nh_idx = gr * grid_cols + gc
             n_here = base + (1 if nh_idx < remainder else 0)
-            ox = margin_x + gc * (nh_w + gap)
-            oy = margin_y + gr * (nh_h + gap)
+            ox = margin_x + gc * (nh_w + gap_x)
+            oy = margin_y + gr * (nh_h + gap_y)
             c = 0
             for row in range(nh_rows):
                 for col in range(nh_cols):
                     if c >= n_here:
                         break
-                    coords.append([ox + col * spacing, oy + row * spacing])
+                    coords.append([ox + col * sx, oy + row * sy])
                     c += 1
                 if c >= n_here:
                     break
     for gr in range(grid_rows):
         for gc in range(grid_cols - 1):
-            lox = margin_x + gc * (nh_w + gap)
-            loy = margin_y + gr * (nh_h + gap)
+            lox = margin_x + gc * (nh_w + gap_x)
+            loy = margin_y + gr * (nh_h + gap_y)
             rex = lox + nh_w
             my = loy + nh_h / 2
             for c in range(n_connectors):
-                coords.append([rex + (c + 1) * spacing, my])
+                coords.append([rex + (c + 1) * sx, my])
     for gr in range(grid_rows - 1):
         for gc in range(grid_cols):
-            box = margin_x + gc * (nh_w + gap)
-            boy = margin_y + gr * (nh_h + gap)
+            box = margin_x + gc * (nh_w + gap_x)
+            boy = margin_y + gr * (nh_h + gap_y)
             tey = boy + nh_h
             mx = box + nh_w / 2
             for c in range(n_connectors):
-                coords.append([mx, tey + (c + 1) * spacing])
+                coords.append([mx, tey + (c + 1) * sy])
     coords = np.clip(np.array(coords), _COORD_MIN, _COORD_MAX)
     return coords[:, 0], coords[:, 1]
 
@@ -439,16 +457,35 @@ class HouseholdAgent(mesa.Agent):
         where D in [0, 1] is the damage fraction read from the depth-damage
         curve. A shallow flood gives lambda_damage near 1; a flood at or
         beyond total-failure depth gives LAMBDA_DAMAGE_MAX.
+
+        Habituation: the base factor stays at lambda_flood for the first
+        FLOOD_DECAY_START floods, then decays LINEARLY toward 1 between the
+        FLOOD_DECAY_START-th and FLOOD_DECAY_END-th flood, and equals 1 (no
+        further belief update from experience) from the FLOOD_DECAY_END-th
+        flood on. With the defaults (5 and 16) the 6th-15th floods contribute
+        progressively less and the 16th and later floods have no effect.
         """
         if self.is_retrofitted:
             return False
         if flood_level > self.z:
             self.flood_count += 1
             m = self.model
+            k = self.flood_count
+            # linear habituation weight w in [0, 1] on (lambda_flood - 1):
+            # full (w=1) through flood FLOOD_DECAY_START, linear decay to 0 at
+            # flood FLOOD_DECAY_END, and 0 (no effect) from FLOOD_DECAY_END on.
+            lo, hi = FLOOD_DECAY_START, FLOOD_DECAY_END
+            if k <= lo:
+                w = 1.0
+            elif k >= hi:
+                w = 0.0
+            else:
+                w = (hi - k) / (hi - lo)
+            lambda_flood_eff = 1.0 + (m.LAMBDA_FLOOD - 1.0) * w
             depth = flood_level - self.z
             D = damage_fraction(depth, m.DEPTH_DAMAGE_CURVE, m.TOTAL_FAILURE_DEPTH)
             lambda_damage = 1.0 + (m.LAMBDA_DAMAGE_MAX - 1.0) * D
-            self.belief = bayesian_update(self.belief, m.LAMBDA_FLOOD * lambda_damage)
+            self.belief = bayesian_update(self.belief, lambda_flood_eff * lambda_damage)
             return True
         return False
 
@@ -1492,6 +1529,13 @@ def _page_documentation():
         "must experience several \u2014 or a few severe \u2014 floods before belief "
         "nears the threshold, consistent with observed low adoption despite "
         "repeated flooding.")
+    st.markdown(
+        "**Habituation.** Repeated flooding yields diminishing evidence: the "
+        "base factor stays at $\\lambda_{flood}$ for the first five floods, then "
+        "decays linearly toward 1 between the 5th and 15th flood, and equals 1 "
+        "from the 16th flood onward \u2014 so a household that floods very often "
+        "eventually stops updating its belief from experience alone, reflecting "
+        "normalisation of chronic flood exposure.")
 
     st.markdown("#### 3.4 &nbsp; Channel 2: proximity-based social learning")
     st.markdown(
