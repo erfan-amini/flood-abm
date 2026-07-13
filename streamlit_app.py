@@ -102,6 +102,12 @@ DEFAULTS = dict(
     ENABLE_HETEROGENEITY=True, N_ATTRIBUTES=2, N_CLASSES=3,
     # Network / neighborhoods
     DISTANCE_THRESHOLD=0.09, DBSCAN_MIN_SAMPLES=4,
+    # Layout spacing controls (how spread out the households are drawn):
+    #   LAYOUT_SPREAD    - fraction of the domain the layout fills (higher =
+    #                      nodes pushed further toward the edges).
+    #   NODE_SPACING_MULT- extra multiplier on the base node spacing (higher =
+    #                      more distance between adjacent households).
+    LAYOUT_SPREAD=0.98, NODE_SPACING_MULT=1.15,
     # Belief.  Opening default is a LOW baseline (0.08) consistent with the
     # baseline against which the survey odds ratios were estimated; the raw
     # survey point-estimates (e.g. b0 ~ 0.23) assume the other channels held
@@ -145,8 +151,10 @@ DEFAULTS = dict(
     # observed values to match your questionnaire analysis.
     #   never flooded (0) | flooded < a year (1-4) | flooded > a year (5+)
     OBSERVED_BIN_EDGES=[(0, 0), (1, 4), (5, np.inf)],
-    OBSERVED_BIN_RATES=[35.0, 60.0, 89.7],     # per-category retrofit rate (%)
-    OBSERVED_BIN_RETRO=[35, 48, 26],           # retrofit count within each bin
+    #   Retrofit = any of: raising utilities, wet-floodproofing the basement,
+    #   dry-floodproofing, or raising the home (survey ReQ64 actions).
+    OBSERVED_BIN_RATES=[18.0, 27.5, 58.6],     # per-category retrofit rate (%)
+    OBSERVED_BIN_RETRO=[18, 22, 17],           # retrofit count within each bin
     OBSERVED_BIN_SIZES=[100, 80, 29],          # number of survey households in bin
 )
 
@@ -273,7 +281,8 @@ _MAX_EXTENT = 1.0 - 2 * _MIN_MARGIN
 _COORD_MIN, _COORD_MAX = 0.01, 0.99
 
 
-def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols, n_connectors):
+def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
+                    n_connectors, layout_spread=_MAX_EXTENT, node_spacing_mult=1.0):
     n_neighborhoods = grid_rows * grid_cols
     n_h = grid_rows * (grid_cols - 1)
     n_v = (grid_rows - 1) * grid_cols
@@ -291,7 +300,7 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols, n_connec
 
     max_per = base + (1 if remainder > 0 else 0)
     nh_rows, nh_cols = dims(max_per)
-    spacing = _DIAGONAL_SAFETY * distance_threshold / np.sqrt(2)
+    spacing = _DIAGONAL_SAFETY * distance_threshold / np.sqrt(2) * node_spacing_mult
     # Independent x/y spacing so the layout can fill the whole domain even when
     # the grid is tall and narrow (more rows than cols) or the reverse. Both
     # start from the same base spacing (kept <= threshold/sqrt(2) so diagonal
@@ -304,14 +313,15 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols, n_connec
     total_w = grid_cols * nh_w + (grid_cols - 1) * gap_x
     total_h = grid_rows * nh_h + (grid_rows - 1) * gap_y
 
-    # Scale each axis independently to fill (or fit) the available extent. The
-    # x and y spacings may differ so a non-square grid still spreads across the
-    # domain. Cap each scaled spacing at the distance threshold so within- and
-    # between-node links are preserved.
+    # Scale each axis independently to fill (or fit) the available extent
+    # (layout_spread = fraction of the domain to fill). The x and y spacings may
+    # differ so a non-square grid still spreads across the domain. Cap each
+    # scaled spacing at the distance threshold so within- and between-node links
+    # are preserved.
     def fill(total, span):
         return (span / total) if total > 0 else 1.0
-    sx *= fill(total_w, _MAX_EXTENT)
-    sy *= fill(total_h, _MAX_EXTENT)
+    sx *= fill(total_w, layout_spread)
+    sy *= fill(total_h, layout_spread)
     cap = _DIAGONAL_SAFETY * distance_threshold
     sx = min(sx, cap); sy = min(sy, cap)
     gap_x = (n_connectors + 1) * sx
@@ -368,9 +378,10 @@ def _generate_elevation(x, slope, noise_factor, rng):
 
 
 def generate_spatial(n_agents, distance_threshold, grid_rows, grid_cols,
-                     n_connectors, slope, noise_factor, rng):
+                     n_connectors, slope, noise_factor, rng,
+                     layout_spread=_MAX_EXTENT, node_spacing_mult=1.0):
     x, y = _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
-                           n_connectors)
+                           n_connectors, layout_spread, node_spacing_mult)
     z = _generate_elevation(x, slope, noise_factor, rng)
     return np.column_stack([x, y]), z
 
@@ -582,7 +593,8 @@ class FloodAdaptationModel(mesa.Model):
             self.positions, self.elevations = generate_spatial(
                 self.n_agents, self.DISTANCE_THRESHOLD, self.GRID_ROWS,
                 self.GRID_COLS, self.N_CONNECTORS, self.SLOPE,
-                self.NOISE_FACTOR, self.rng)
+                self.NOISE_FACTOR, self.rng,
+                self.LAYOUT_SPREAD, self.NODE_SPACING_MULT)
         self.n_agents = len(self.positions)   # grid or CSV sets the final count
 
         self.attributes = generate_attributes(
@@ -866,6 +878,8 @@ def _collect_params():
         N_CLASSES=int(g("N_CLASSES", D["N_CLASSES"])),
         DISTANCE_THRESHOLD=g("DISTANCE_THRESHOLD", D["DISTANCE_THRESHOLD"]),
         DBSCAN_MIN_SAMPLES=int(g("DBSCAN_MIN_SAMPLES", D["DBSCAN_MIN_SAMPLES"])),
+        LAYOUT_SPREAD=g("LAYOUT_SPREAD", D["LAYOUT_SPREAD"]),
+        NODE_SPACING_MULT=g("NODE_SPACING_MULT", D["NODE_SPACING_MULT"]),
         INITIAL_BELIEF=g("INITIAL_BELIEF", D["INITIAL_BELIEF"]),
         LAMBDA_FLOOD=g("LAMBDA_FLOOD", D["LAMBDA_FLOOD"]),
         LAMBDA_DAMAGE_MAX=g("LAMBDA_DAMAGE_MAX", D["LAMBDA_DAMAGE_MAX"]),
@@ -1081,6 +1095,15 @@ def _page_settings():
                 ni("Grid Cols", "GRID_COLS", 1, 10)
             ni("Connectors", "N_CONNECTORS", 0, 10)
             nb("Elevation Noise", "NOISE_FACTOR", 0.01, "%.2f", 0.0, 1.0)
+            sp1, sp2 = st.columns(2)
+            with sp1:
+                nb("Layout Spread", "LAYOUT_SPREAD", 0.02, "%.2f", 0.30, 0.98,
+                   help="Fraction of the domain the households fill. Higher = "
+                        "more distance, spread toward the edges.")
+            with sp2:
+                nb("Node Spacing", "NODE_SPACING_MULT", 0.05, "%.2f", 0.5, 3.0,
+                   help="Multiplier on the distance between adjacent "
+                        "households. Higher = more space between nodes.")
         with s3:
             _sec("Network", "Who is connected, and cluster detection.", C_MINOR)
             nb("Distance Threshold", "DISTANCE_THRESHOLD", 0.01, "%.2f", 0.01, 0.5,
