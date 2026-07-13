@@ -50,8 +50,7 @@ Survey-anchored defaults (NYC Flood Vulnerability Survey, cleaned):
   lambda_damage_max 1.20  (cap of the depth-driven damage multiplier)
   total_failure_depth 0.05  (depth at which damage is total, D = 1)
   lambda_response   3.20  (precautionary-action-on-forecast odds ratio)
-  P(trusted info) 0.46 (assigned to lowest-elevation homes first) ;
-  P(prepared on forecast | trusted info) 0.78
+  P(trusted info) 0.46 ; P(prepared on forecast | trusted info) 0.78
   Cumulative "at most k" retrofit targets: 18.0 / 22.3 / 27.4 %
 
 References
@@ -123,7 +122,7 @@ DEFAULTS = dict(
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_OBSERVATION=3.00, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
+    LAMBDA_OBSERVATION=1.50, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
@@ -549,16 +548,8 @@ class FloodAdaptationModel(mesa.Model):
         self.G = build_network(self.positions, self.attributes, self.DISTANCE_THRESHOLD)
         self.grid = NetworkGrid(self.G)
 
-        # Trusted information is assigned to LOW/MEDIUM-elevation homes first:
-        # the most flood-exposed households are the most likely to seek and hold
-        # a trusted flood-information source. We take the round(P x N) lowest-
-        # elevation households as the informed set (deterministic, ties broken
-        # by index for reproducibility), rather than an unstructured draw.
-        n_info = int(round(self.P_TRUSTED_INFO * self.n_agents))
-        info_flags = np.zeros(self.n_agents, dtype=bool)
-        if n_info > 0:
-            low_first = np.lexsort((np.arange(self.n_agents), self.elevations))
-            info_flags[low_first[:n_info]] = True
+        # Trusted information is assigned at random (survey-anchored fraction).
+        info_flags = self.rng.random(self.n_agents) < self.P_TRUSTED_INFO
         # Forecast preparation is conditional on having trusted information:
         # P_FORECAST_PREP is P(prepared on forecast | trusted info). A household
         # can only be a forecast-preparer if it has trusted info.
@@ -1092,7 +1083,7 @@ def _fig_adoption_flood(model):
     ax2 = ax.twinx()
     ax2.bar(range(1, len(model.flood_history) + 1), model.flood_history,
             color="#94a3b8", alpha=0.35, zorder=1)
-    ax2.set_ylabel("Flood level", color="#64748b")
+    ax2.set_ylabel("Normalized flood level", color="#64748b")
     ax2.tick_params(axis="y", labelcolor="#64748b")
     fig.tight_layout()
     return fig
@@ -1143,7 +1134,7 @@ def _fig_comparison(model, model_rates, model_counts, n, obs_rates, obs_counts):
             cx = bar.get_x() + bar.get_width() / 2
             if h > 3:
                 ax.text(cx, h / 2, f"{c}/{n}", ha="center", va="center",
-                        fontsize=8.5, fontweight="bold", color="white")
+                        fontsize=10.5, fontweight="bold", color="white")
             ax.text(cx, h + 1, f"{r:.0f}%", ha="center", va="bottom",
                     fontsize=9, fontweight="bold")
     annotate(bm, model_counts, model_rates)
@@ -1179,7 +1170,7 @@ def _fig_belief_evolution(model):
     ax.axhline(model.INITIAL_BELIEF, color="gray", ls=":",
                label=f"Prior = {model.INITIAL_BELIEF:.2f}")
     ax.set(xlabel="Time step", ylabel="$P(H_1)$")
-    ax.legend(fontsize=7); ax.grid(alpha=0.3)
+    ax.legend(fontsize=7, loc="lower right"); ax.grid(alpha=0.3)
     fig.tight_layout()
     return fig
 
@@ -1203,7 +1194,7 @@ def _fig_network(model):
                         edgecolor=[DARK_RED if a.has_trusted_info else "black" for a in ad],
                         linewidth=[1.6 if a.has_trusted_info else 0.8 for a in ad], zorder=3,
                         vmin=1, vmax=max(1, model.current_step))
-        fig.colorbar(sc, ax=ax, shrink=0.7).set_label("Retrofit step")
+        fig.colorbar(sc, ax=ax, shrink=0.7).set_label("Time step (e.g., year) when retrofit")
     # number inside each node = that household's personal flood count
     for a in agents:
         ax.text(a.x, a.y, str(a.flood_count), ha="center", va="center",
@@ -1560,13 +1551,11 @@ def _page_documentation():
     st.markdown(
         "Two binary traits gate the conditional multipliers on the information "
         "channel: *has trusted information* and *takes precautionary action on "
-        "forecasts*. **Trusted information is assigned to the lowest-elevation "
-        "households first** \u2014 the round($P_{\\text{info}}\\!\\times\\!N$) most "
-        "flood-exposed homes \u2014 reflecting that the households most at risk are "
-        "the most likely to seek and hold a trusted flood-information source "
-        "($P_{\\text{info}}=0.46$ in the survey). **Forecast preparation is then "
-        "conditional on being informed**: among households with trusted "
-        "information, a fraction $P_{\\text{prep}\\,|\\,\\text{info}}=0.78$ also "
+        "forecasts*. Trusted information is assigned at random using the "
+        "survey-anchored fraction ($P_{\\text{info}}=0.46$). **Forecast "
+        "preparation is conditional on being informed**: among households with "
+        "trusted information, a fraction "
+        "$P_{\\text{prep}\\,|\\,\\text{info}}=0.78$ also "
         "take precautionary action on the forecast (survey: 74/95). Both traits "
         "are fixed for the life of the simulation. The flood-experience channel "
         "needs no such trait: its damage multiplier is computed directly from "
