@@ -133,7 +133,7 @@ DEFAULTS = dict(
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_OBSERVATION=2.40, LAMBDA_SIMILARITY=3.00, SIM_THRESHOLD=0.50,
+    LAMBDA_OBSERVATION=2.65, LAMBDA_SIMILARITY=3.00, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
@@ -1367,7 +1367,7 @@ def _fig_comparison(model, m_rates, m_retro, m_sizes, o_rates, o_retro, o_sizes)
                     fontsize=9, fontweight="bold")
     annotate(bm, m_retro, n_model, m_share)
     annotate(bo, o_retro, n_obs, o_share)
-    ax.set(ylabel="Retrofitted (% of all households)", ylim=(0, 50))
+    ax.set(ylabel="Retrofitted (% of all households)", ylim=(0, 20))
     ax.set_xticks(x)
     ax.set_xticklabels(["never flooded",
                         "flooded less\nthan once a year",
