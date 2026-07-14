@@ -96,14 +96,14 @@ DEFAULTS = dict(
     # Simulation
     TIME_STEPS=75, RANDOM_SEED=42,
     # Spatial / population
-    N_AGENTS=209, GRID_ROWS=4, GRID_COLS=4, N_CONNECTORS=1,
+    N_AGENTS=209, GRID_ROWS=3, GRID_COLS=2, N_CONNECTORS=1,
     # Inner layout of agents WITHIN each neighborhood. 0 = auto: use the
     # inverse of the neighborhood grid (so a 4x3 neighborhood grid gives ~3x4
     # inner blocks). Set a positive value to fix the inner rows / cols.
     NH_INNER_ROWS=0, NH_INNER_COLS=0,
     SLOPE=1.0, NOISE_FACTOR=0.02,
     # Attributes
-    ENABLE_HETEROGENEITY=True, N_ATTRIBUTES=2, N_CLASSES=3,
+    ENABLE_HETEROGENEITY=True, N_ATTRIBUTES=1, N_CLASSES=4,
     # Network / neighborhoods
     DISTANCE_THRESHOLD=0.09, DBSCAN_MIN_SAMPLES=4,
     # Layout spacing controls (how spread out the households are drawn):
@@ -123,7 +123,7 @@ DEFAULTS = dict(
     # depth-damage curve maps the flood depth to a damage fraction D in [0, 1],
     # and lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D grows from 1 (no
     # damage) to LAMBDA_DAMAGE_MAX (total failure at TOTAL_FAILURE_DEPTH).
-    LAMBDA_FLOOD=1.40, LAMBDA_DAMAGE_MAX=1.10,
+    LAMBDA_FLOOD=1.35, LAMBDA_DAMAGE_MAX=1.05,
     TOTAL_FAILURE_DEPTH=0.01,
     ENABLE_FLOOD_DECAY=False,   # off => every flood keeps full lambda_flood (no decay)
     # depth-damage curve: (depth, damage_fraction) points, interpolated
@@ -133,7 +133,7 @@ DEFAULTS = dict(
     # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
     # opened low (1.30) because the dense network makes the social cascade the
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_OBSERVATION=2.20, LAMBDA_SIMILARITY=2.00, SIM_THRESHOLD=0.50,
+    LAMBDA_OBSERVATION=2.40, LAMBDA_SIMILARITY=3.00, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
     # (OR ~3.2).  Opened with LOW information factor and multiplier so the
@@ -146,12 +146,12 @@ DEFAULTS = dict(
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
     # from Uniform(LOW, HIGH); when OFF, every household uses MEAN (a single
     # point value).
-    PMT_THRESHOLD_MEAN=1.00,
+    PMT_THRESHOLD_MEAN=0.90,
     PMT_THRESHOLD_LOW=0.90, PMT_THRESHOLD_HIGH=1.00,
     ENABLE_THRESHOLD_HET=True,
     # Flood (GEV)
     RETURN_PERIODS=[10, 20, 50, 100],
-    FLOOD_LEVELS=[0.05, 0.1, 0.2, 0.4],
+    FLOOD_LEVELS=[0.03, 0.08, 0.18, 0.3],
     # DISTINCT flood-experience bins (inclusive flood-count ranges) and the
     # survey per-category retrofit rates + counts within each bin. Edit the
     # observed values to match your questionnaire analysis.
@@ -459,19 +459,22 @@ def _connected_grid(n_agents, distance_threshold, grid_rows, grid_cols,
             my = loy + r * s
             for c in range(n_connectors):
                 coords.append([rex + (c + 1) * s, my])
-    # Vertical connectors: centred HORIZONTALLY at the true middle of the
-    # neighbourhood (the midpoint of its occupied columns, which for an even
-    # column count falls between two nodes -- still within one spacing of both,
-    # so it stays connected). Spaced EQUIDISTANTLY between the lower block's top
-    # node and the upper block's bottom node.
+    # Vertical connectors: placed as close to the neighbourhood's true centre as
+    # possible while still attaching to a real node in the lower block's top
+    # (possibly partial) row. We snap the centre x to the nearest occupied
+    # column of that top row, so the connector is centred yet always linked to
+    # both blocks. Spaced EQUIDISTANTLY between the lower top node and the upper
+    # bottom node.
+    center_col = (nh_cols - 1) / 2.0
     for gr in range(grid_rows - 1):
         for gc in range(grid_cols):
             box = margin_x + gc * col_pitch
             lower_idx = gr * grid_cols + gc
-            # occupied columns in the lower block's top row bound the centre so
-            # the connector stays within a spacing of a real node there.
+            # nearest occupied column in the lower block's top filled row to the
+            # geometric centre (top row spans columns 0 .. ncols_top-1)
             ncols_top = top_row_cols(lower_idx)
-            center_x = box + (ncols_top - 1) * s / 2.0
+            col = int(round(min(center_col, ncols_top - 1)))
+            center_x = box + col * s
             lower_top = margin_y + gr * row_pitch + top_filled_row(lower_idx) * s
             upper_bot = margin_y + (gr + 1) * row_pitch
             span = upper_bot - lower_top
