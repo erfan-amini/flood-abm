@@ -30,9 +30,11 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
   2. Proximity-based social learning
        base:       lambda_observation  per newly-retrofitted connected
                    neighbor (Granovetter, 1978).
-       multiplier: lambda_similarity   active when that neighbor is similar,
-                   i.e. Gower similarity S(i,j) >= SIM_THRESHOLD
-                   (Gower, 1971; McPherson et al., 2001). = 1 otherwise.
+       multiplier: lambda_similarity   scales linearly with the Gower
+                   similarity S(i,j) in [0, 1]:
+                   lambda_sim = 1 + (lambda_similarity - 1) * S
+                   (Gower, 1971; McPherson et al., 2001). S = 0 gives 1
+                   (no effect); S = 1 gives the full lambda_similarity.
        Fires only when a connected neighbor is retrofitted; with no
        retrofitted neighbor the whole channel is inert (factor 1).
 
@@ -119,23 +121,24 @@ DEFAULTS = dict(
     # depth-damage curve maps the flood depth to a damage fraction D in [0, 1],
     # and lambda_damage = 1 + (LAMBDA_DAMAGE_MAX - 1) * D grows from 1 (no
     # damage) to LAMBDA_DAMAGE_MAX (total failure at TOTAL_FAILURE_DEPTH).
-    LAMBDA_FLOOD=1.35, LAMBDA_DAMAGE_MAX=1.05,
+    LAMBDA_FLOOD=1.55, LAMBDA_DAMAGE_MAX=1.20,
     TOTAL_FAILURE_DEPTH=0.01,
     ENABLE_FLOOD_DECAY=False,   # off => every flood keeps full lambda_flood (no decay)
     # depth-damage curve: (depth, damage_fraction) points, interpolated
     # linearly.  D(0)=0 and D(TOTAL_FAILURE_DEPTH)=1 by construction.
     DEPTH_DAMAGE_CURVE=[(0.0, 0.0), (0.0125, 0.40), (0.025, 0.70),
                         (0.0375, 0.90), (0.05, 1.0)],
-    # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51;
-    # opened low (1.30) because the dense network makes the social cascade the
-    # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
-    LAMBDA_OBSERVATION=2.65, LAMBDA_SIMILARITY=3.00, SIM_THRESHOLD=0.50,
+    # Channel 2 - proximity + similarity.  Survey/prior anchor for social 4.51.
+    # LAMBDA_SIMILARITY is the CAP of the similarity multiplier, reached when a
+    # neighbour is identical (S = 1); the multiplier scales linearly with S and
+    # equals 1 (no effect) for a wholly dissimilar neighbour (S = 0).
+    LAMBDA_OBSERVATION=3.00, LAMBDA_SIMILARITY=3.00,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
     # (OR ~1.39, n.s.).  Opened with a LOW information factor so the one-time
     # t=0 informational prior does not by itself push belief over the
     # threshold; tune upward toward the survey anchor as needed.
     LAMBDA_INFO=1.30,
-    P_TRUSTED_INFO=0.46,
+    P_TRUSTED_INFO=0.20,
     ENABLE_INFO_CHANNEL=True,   # on => information channel active
     # PMT threshold
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
@@ -618,8 +621,11 @@ class HouseholdAgent(mesa.Agent):
     def social_learning(self):
         """
         For each connected neighbor newly observed as retrofitted, apply the
-        base proximity factor lambda_observation times the similarity multiplier
-        lambda_similarity when that neighbor is similar (Gower S >= threshold).
+        base proximity factor lambda_observation times a similarity multiplier
+        that scales LINEARLY with the Gower similarity S(i,j) in [0, 1]:
+        lambda_sim = 1 + (LAMBDA_SIMILARITY - 1) * S. A wholly dissimilar
+        neighbor (S = 0) gives lambda_sim = 1 (no similarity effect); an
+        identical neighbor (S = 1) gives the full LAMBDA_SIMILARITY.
         With no retrofitted neighbor the channel is inert.
         """
         if self.is_retrofitted:
@@ -629,8 +635,8 @@ class HouseholdAgent(mesa.Agent):
             if neighbor.is_retrofitted and neighbor.unique_id not in self.observed_retrofitted:
                 self.observed_retrofitted.add(neighbor.unique_id)
                 S = m.G.edges[self.pos, neighbor.pos]["similarity"]
-                mult = m.LAMBDA_SIMILARITY if S >= m.SIM_THRESHOLD else 1.0
-                self.belief = bayesian_update(self.belief, m.LAMBDA_OBSERVATION * mult)
+                lambda_sim = 1.0 + (m.LAMBDA_SIMILARITY - 1.0) * S
+                self.belief = bayesian_update(self.belief, m.LAMBDA_OBSERVATION * lambda_sim)
 
     # -- Channel 3: trusted information (applied once at init) ---------------
     def apply_information_prior(self):
@@ -1005,7 +1011,6 @@ def _collect_params():
         ENABLE_FLOOD_DECAY=g("ENABLE_FLOOD_DECAY", D["ENABLE_FLOOD_DECAY"]),
         LAMBDA_OBSERVATION=g("LAMBDA_OBSERVATION", D["LAMBDA_OBSERVATION"]),
         LAMBDA_SIMILARITY=g("LAMBDA_SIMILARITY", D["LAMBDA_SIMILARITY"]),
-        SIM_THRESHOLD=g("SIM_THRESHOLD", D["SIM_THRESHOLD"]),
         LAMBDA_INFO=g("LAMBDA_INFO", D["LAMBDA_INFO"]),
         ENABLE_INFO_CHANNEL=g("ENABLE_INFO_CHANNEL", D["ENABLE_INFO_CHANNEL"]),
         P_TRUSTED_INFO=g("P_TRUSTED_INFO", D["P_TRUSTED_INFO"]),
@@ -1166,11 +1171,13 @@ def _page_settings():
              "Social learning from retrofitted neighbours, stronger if similar.", C_CH2)
         nb("\u03bb_observation  (base, per neighbor)", "LAMBDA_OBSERVATION", 0.01, "%.2f", 1.0, None,
            help="Bayes factor per newly-retrofitted connected neighbor [7].")
-        nb("\u03bb_similarity  (\u00d7 if similar)", "LAMBDA_SIMILARITY", 0.1, "%.2f", 1.0, None,
-           help="Applied when the retrofitted neighbor is similar "
-                "(Gower S \u2265 threshold). 1.0 = no similarity effect.")
-        nb("Similarity threshold  (S \u2265)", "SIM_THRESHOLD", 0.05, "%.2f", 0.0, 1.0,
-           help="A neighbor counts as similar at or above this Gower similarity.")
+        nb("\u03bb_similarity max  (cap, if identical)", "LAMBDA_SIMILARITY", 0.1, "%.2f", 1.0, None,
+           help="Cap of the similarity multiplier, reached when the "
+                "retrofitted neighbour is identical (Gower S = 1). The "
+                "multiplier scales linearly with similarity: "
+                "\u03bb_sim = 1 + (max\u22121)\u00d7S, so a wholly dissimilar "
+                "neighbour (S = 0) gives 1 (no similarity effect). "
+                "1.0 = no similarity effect at any S.")
     with ch3:
         _sec("Channel 3 \u00b7 Information",
              "One-time t=0 prior from trusted information.", C_CH3)
@@ -1338,7 +1345,13 @@ def _fig_comparison(model, m_rates, m_retro, m_sizes, o_rates, o_retro, o_sizes)
                     fontsize=9, fontweight="bold")
     annotate(bm, m_retro, n_model, m_share)
     annotate(bo, o_retro, n_obs, o_share)
-    ax.set(ylabel="Retrofitted (% of all households)", ylim=(0, 20))
+    # Y-limit set automatically: round up to the next multiple of 10 that leaves
+    # headroom above the tallest bar for its percentage label (e.g. a tallest
+    # bar of 11% gives an axis to 20%). Minimum of 10% so near-zero results
+    # still render on a sensible scale.
+    tallest = max(list(m_share) + list(o_share) + [0.0])
+    top = max(10.0, np.ceil(tallest * 1.12 / 10.0) * 10.0)
+    ax.set(ylabel="Retrofitted (% of all households)", ylim=(0, top))
     ax.set_xticks(x)
     ax.set_xticklabels(["never flooded",
                         "flooded less\nthan once a year",
@@ -1454,7 +1467,7 @@ def _config_chips(p):
         ("P(H\u2081)", f"{p['INITIAL_BELIEF']:.2f}"),
         ("\u03b8", theta),
         ("\u03bb_flood\u00d7\u03bb_dmg", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_DAMAGE_MAX']:.2f}"),
-        ("\u03bb_obs\u00d7\u03bb_sim", f"{p['LAMBDA_OBSERVATION']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
+        ("\u03bb_obs\u00d7\u03bb_sim max", f"{p['LAMBDA_OBSERVATION']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
         ("\u03bb_info", f"{p['LAMBDA_INFO']:.2f}"),
         ("Seed", p["RANDOM_SEED"]),
     ]
@@ -1623,12 +1636,12 @@ def _page_documentation():
              r"\lambda_{\text{sim}}\bigr)}_{\text{proximity (per neighbour)}}\times "
              r"\underbrace{\lambda_{\text{info}}}_{\text{information (once, }t=0)}")
     st.markdown("Each group is one channel: the first term is the base factor "
-                "and the term(s) after $\\times$ are conditional multipliers "
-                "that equal 1 when their trigger is absent "
-                "($\\lambda_{\\text{damage}}$ scales with flood depth, "
-                "$\\lambda_{\\text{sim}}$ applies only to a similar "
-                "neighbour). The experience group is applied once per flood and "
-                "the proximity group once per newly-retrofitted connected "
+                "and the term(s) after $\\times$ are graded multipliers that "
+                "fall to 1 when their trigger is absent \u2014 "
+                "$\\lambda_{\\text{damage}}$ scales with flood depth and "
+                "$\\lambda_{\\text{sim}}$ scales with how similar the "
+                "neighbour is. The experience group is applied once per flood "
+                "and the proximity group once per newly-retrofitted connected "
                 "neighbour, so those groups repeat as many times as their "
                 "events occur in a step; the information factor fires once.")
     st.markdown("**Step 3 \u2014 Convert the posterior odds back to a probability:**")
@@ -1713,15 +1726,21 @@ def _page_documentation():
         "$\\mathcal{N}_i^{(t)}$ be the connected neighbours **newly observed** "
         "to have retrofitted at step $t$ (each counted once \u2014 one-shot "
         "learning). For each such neighbour the base factor $\\lambda_{obs}$ "
-        "[7] is multiplied by a similarity multiplier "
-        "$\\lambda_{similarity}$ when the neighbour is **similar**, i.e. their "
-        "Gower similarity meets the threshold [6], [12]:")
+        "[7] is multiplied by a similarity multiplier that scales **linearly** "
+        "with the Gower similarity $S(i,j)\\in[0,1]$ [6], [12]:")
     st.latex(r"""\lambda_{\text{prox},ij} =
 \begin{cases}
-\lambda_{obs}\cdot\lambda_{similarity} & j\ \text{retrofitted and } S(i,j)\ge S^\ast\\
-\lambda_{obs} & j\ \text{retrofitted and } S(i,j)< S^\ast\\
+\lambda_{obs}\cdot\bigl[\,1+(\lambda_{similarity}^{\max}-1)\,S(i,j)\bigr] & j\ \text{newly retrofitted}\\
 1 & \text{no newly-retrofitted neighbour}
 \end{cases}""")
+    st.markdown("The similarity multiplier therefore runs from 1 at $S=0$ (a "
+                "wholly dissimilar neighbour exerts no similarity effect, "
+                "leaving only $\\lambda_{obs}$) to its cap "
+                "$\\lambda_{similarity}^{\\max}$ at $S=1$ (an identical "
+                "neighbour). This mirrors the depth\u2013damage construction of "
+                "$\\lambda_{damage}$ on the experience channel, and replaces a "
+                "binary similar/not-similar cut-off with a graded effect, so no "
+                "arbitrary similarity threshold is needed.")
     st.markdown("This channel is grounded in empirical evidence that flood "
                 "adaptation spreads through social proximity: households are "
                 "more likely to adopt protective measures when neighbours and "
@@ -1737,8 +1756,8 @@ def _page_documentation():
     st.latex(r"S(i,j) = \frac{1}{A}\sum_{a=1}^{A}\mathbb{1}\!\left[x_{ia}=x_{ja}\right]"
              r"\ \in[0,1]\quad(\text{[6]})")
     st.markdown("so a retrofitting neighbour who resembles the agent carries "
-                "more weight than a dissimilar one, and with no retrofitted "
-                "neighbour the channel is inert.")
+                "proportionally more weight than a dissimilar one, and with no "
+                "retrofitted neighbour the channel is inert.")
 
     st.markdown("#### 3.5 &nbsp; Channel 3: trusted information")
     st.markdown(
@@ -1761,8 +1780,8 @@ def _page_documentation():
                 unsafe_allow_html=True)
     st.markdown(
         "One binary trait gates the information channel: *has trusted "
-        "information*. It is assigned at random using the survey-anchored "
-        "fraction ($P_{\\text{info}}=0.46$, i.e. 95/209 households) and is "
+        "information*. It is assigned at random to a user-set fraction "
+        "$P_{\\text{info}}$ of households (survey anchor: 0.46, i.e. 95/209) and is "
         "fixed for the life of the simulation. The flood-experience channel "
         "needs no such trait: its damage multiplier is computed directly from "
         "each flood's depth.")
@@ -1818,9 +1837,10 @@ def _page_documentation():
     st.markdown(
         "All parameters live on the **Settings** page, grouped into core "
         "decision drivers (belief, the three channels, the threshold) and "
-        "structural environment settings. Survey-anchored starting values: "
-        "$\\lambda_{flood}=1.52$; trusted-information fraction 0.46. "
-        "The flood-experience severity is set by "
+        "structural environment settings. Survey anchors used as reference "
+        "points: $\\lambda_{flood}=1.52$ and a trusted-information fraction of "
+        "0.46; the opening defaults may sit away from these while the model is "
+        "calibrated. The flood-experience severity is set by "
         "$\\lambda_{damage}^{\\max}$ (default 1.20), the total-failure depth "
         "(default 0.05), and the depth\u2013damage curve, rather than by a trait. "
         "The opening defaults are deliberately de-escalated from these raw "
