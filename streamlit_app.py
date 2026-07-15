@@ -1426,6 +1426,15 @@ def _fig_network(model):
         legend_handles.append(Patch(facecolor="white", edgecolor=DARK_RED,
                                     linewidth=1.6, label="Trusted information"))
     ax.legend(handles=legend_handles, loc="upper right", fontsize=8)
+    # overall retrofit rate = retrofitted / all agents, boxed at bottom right
+    n_tot = len(agents)
+    n_ret = len(ad)
+    rate = 100.0 * n_ret / n_tot if n_tot else 0.0
+    ax.text(0.985, 0.015, f"Retrofit rate: {n_ret}/{n_tot} = {rate:.2f}%",
+            transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=8.5, fontweight="bold", zorder=6,
+            bbox=dict(boxstyle="round,pad=0.35", facecolor="white",
+                      edgecolor="black", linewidth=0.8))
     caption = "Number in each node = household\u2019s personal flood count"
     caption += ("; dark-red ring = trusted information." if show_info else ".")
     ax.text(0.0, -0.13, caption,
