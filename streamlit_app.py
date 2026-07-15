@@ -39,18 +39,14 @@ multiplier that equals 1 (no effect) whenever its trigger is absent:
   3. Trusted flood information
        base:       lambda_info         active for agents who have a trusted
                    flood-information source.
-       multiplier: lambda_response      active when the agent also takes
-                   precautionary action based on the forecast data.
-                   = 1 otherwise.
        Fires ONCE, at initialization (a static informational prior), because
-       trusted-info and forecast-preparation are stable household traits.
+       having a trusted source is a stable household trait.
 
 Survey-anchored defaults (NYC Flood Vulnerability Survey, cleaned):
   lambda_flood      1.52  (owner per-flood odds ratio)
   lambda_damage_max 1.20  (cap of the depth-driven damage multiplier)
   total_failure_depth 0.05  (depth at which damage is total, D = 1)
-  lambda_response   3.20  (precautionary-action-on-forecast odds ratio)
-  P(trusted info) 0.46 ; P(prepared on forecast | trusted info) 0.78
+  P(trusted info) 0.46
   Per-category retrofit rate targets (never / 1-4 / 5+ floods)
 
 References
@@ -135,12 +131,11 @@ DEFAULTS = dict(
     # main saturation driver.  Similarity is a binary amplifier (S >= threshold).
     LAMBDA_OBSERVATION=2.65, LAMBDA_SIMILARITY=3.00, SIM_THRESHOLD=0.50,
     # Channel 3 - information.  Trusted-info alone is weak in the survey
-    # (OR ~1.39, n.s.); forecast preparation is the stronger amplifier
-    # (OR ~3.2).  Opened with LOW information factor and multiplier so the
-    # one-time t=0 informational prior does not by itself push belief over the
-    # threshold; tune upward toward the survey anchors as needed.
-    LAMBDA_INFO=1.30, LAMBDA_RESPONSE=1.50,
-    P_TRUSTED_INFO=0.46, P_FORECAST_PREP=0.78,
+    # (OR ~1.39, n.s.).  Opened with a LOW information factor so the one-time
+    # t=0 informational prior does not by itself push belief over the
+    # threshold; tune upward toward the survey anchor as needed.
+    LAMBDA_INFO=1.30,
+    P_TRUSTED_INFO=0.46,
     ENABLE_INFO_CHANNEL=True,   # on => information channel active
     # PMT threshold
     # PMT threshold.  When heterogeneity is ON, individual thresholds are drawn
@@ -558,8 +553,7 @@ class HouseholdAgent(mesa.Agent):
     """Bayesian household agent with three evidence channels (see module docstring)."""
 
     def __init__(self, model, x, y, z, attributes, initial_belief,
-                 pmt_threshold, neighborhood_id,
-                 has_trusted_info, forecast_prep):
+                 pmt_threshold, neighborhood_id, has_trusted_info):
         super().__init__(model)
         self.x = x
         self.y = y
@@ -571,9 +565,8 @@ class HouseholdAgent(mesa.Agent):
         self.retrofit_step = None
         self.flood_count = 0
         self.attributes = attributes
-        # static household traits (assigned once at t=0, never changed)
+        # static household trait (assigned once at t=0, never changed)
         self.has_trusted_info = has_trusted_info
-        self.forecast_prep = forecast_prep
         self.observed_retrofitted = set()
 
     # -- Channel 1: personal flood experience --------------------------------
@@ -642,19 +635,16 @@ class HouseholdAgent(mesa.Agent):
     # -- Channel 3: trusted information (applied once at init) ---------------
     def apply_information_prior(self):
         """
-        One-time informational update at t=0. Base factor lambda_info for
-        agents with a trusted flood-information source, times the response
-        multiplier lambda_response for those who also take precautionary
-        action based on the forecast data.
+        One-time informational update at t=0: base factor lambda_info for
+        agents with a trusted flood-information source.
         Agents without trusted information receive no update.
         """
         if not self.has_trusted_info:
             return
         m = self.model
         if not m.ENABLE_INFO_CHANNEL:
-            return          # information channel off: no update (lambdas -> 1)
-        mult = m.LAMBDA_RESPONSE if self.forecast_prep else 1.0
-        self.belief = bayesian_update(self.belief, m.LAMBDA_INFO * mult)
+            return          # information channel off: no update (lambda -> 1)
+        self.belief = bayesian_update(self.belief, m.LAMBDA_INFO)
 
     def make_decision(self):
         # Compare with a tiny tolerance so a belief that has saturated to
@@ -741,10 +731,6 @@ class FloodAdaptationModel(mesa.Model):
 
         # Trusted information is assigned at random (survey-anchored fraction).
         info_flags = self.rng.random(self.n_agents) < self.P_TRUSTED_INFO
-        # Forecast preparation is conditional on having trusted information:
-        # P_FORECAST_PREP is P(prepared on forecast | trusted info). A household
-        # can only be a forecast-preparer if it has trusted info.
-        fc_flags = info_flags & (self.rng.random(self.n_agents) < self.P_FORECAST_PREP)
 
         self.agents_by_node = {}
         for i in range(self.n_agents):
@@ -759,8 +745,7 @@ class FloodAdaptationModel(mesa.Model):
                 z=self.elevations[i], attributes=self.attributes[i],
                 initial_belief=self.INITIAL_BELIEF, pmt_threshold=thr,
                 neighborhood_id=int(self.neighborhood_labels[i]),
-                has_trusted_info=bool(info_flags[i]),
-                forecast_prep=bool(fc_flags[i]))
+                has_trusted_info=bool(info_flags[i]))
             self.grid.place_agent(agent, i)
             self.agents_by_node[i] = agent
 
@@ -788,8 +773,7 @@ class FloodAdaptationModel(mesa.Model):
                 "is_retrofitted": agent.is_retrofitted,
                 "flood_count": agent.flood_count,
                 "retrofit_step": agent.retrofit_step,
-                "has_trusted_info": agent.has_trusted_info,
-                "forecast_prep": agent.forecast_prep})
+                "has_trusted_info": agent.has_trusted_info})
         n_ret = sum(1 for a in self.agents if a.is_retrofitted)
         self.model_data.append({
             "Step": self.current_step,
@@ -1023,10 +1007,8 @@ def _collect_params():
         LAMBDA_SIMILARITY=g("LAMBDA_SIMILARITY", D["LAMBDA_SIMILARITY"]),
         SIM_THRESHOLD=g("SIM_THRESHOLD", D["SIM_THRESHOLD"]),
         LAMBDA_INFO=g("LAMBDA_INFO", D["LAMBDA_INFO"]),
-        LAMBDA_RESPONSE=g("LAMBDA_RESPONSE", D["LAMBDA_RESPONSE"]),
         ENABLE_INFO_CHANNEL=g("ENABLE_INFO_CHANNEL", D["ENABLE_INFO_CHANNEL"]),
         P_TRUSTED_INFO=g("P_TRUSTED_INFO", D["P_TRUSTED_INFO"]),
-        P_FORECAST_PREP=g("P_FORECAST_PREP", D["P_FORECAST_PREP"]),
         PMT_THRESHOLD_MEAN=g("PMT_THRESHOLD_MEAN", D["PMT_THRESHOLD_MEAN"]),
         PMT_THRESHOLD_LOW=g("PMT_THRESHOLD_LOW", D["PMT_THRESHOLD_LOW"]),
         PMT_THRESHOLD_HIGH=g("PMT_THRESHOLD_HIGH", D["PMT_THRESHOLD_HIGH"]),
@@ -1191,7 +1173,7 @@ def _page_settings():
            help="A neighbor counts as similar at or above this Gower similarity.")
     with ch3:
         _sec("Channel 3 \u00b7 Information",
-             "One-time t=0 prior from trusted information and forecast info.", C_CH3)
+             "One-time t=0 prior from trusted information.", C_CH3)
         st.checkbox(
             "Enable information channel",
             value=bool(_P.get("p_ENABLE_INFO_CHANNEL", D["ENABLE_INFO_CHANNEL"])),
@@ -1203,20 +1185,9 @@ def _page_settings():
         nb("\u03bb_info  (base, if trusted info)", "LAMBDA_INFO", 0.01, "%.2f", 1.0, None,
            help="One-time t=0 factor for agents with a trusted source. "
                 "Survey: weak alone (OR ~1.39).")
-        nb("\u03bb_response  (\u00d7 if forecast info)", "LAMBDA_RESPONSE", 0.05, "%.2f", 1.0, None,
-           help="Amplifier for agents who take precautionary action based on the forecast data. Survey ~3.2.")
-        fr1, fr2 = st.columns(2)
-        with fr1:
-            nb("Fraction with trusted information", "P_TRUSTED_INFO", 0.01, "%.2f", 0.0, 1.0,
-               help="Share of households with a trusted flood-information "
-                    "source. Survey: 0.46 (95/209).")
-        with fr2:
-            nb("Fraction prepared on forecast (of those informed)",
-               "P_FORECAST_PREP", 0.01, "%.2f", 0.0, 1.0,
-               help="Among households WITH trusted information, the share that "
-                    "took precautionary action on the forecast. Survey: 0.78 "
-                    "(74/95). Applied conditionally \u2014 only informed households "
-                    "can be forecast-preparers.")
+        nb("Fraction with trusted information", "P_TRUSTED_INFO", 0.01, "%.2f", 0.0, 1.0,
+           help="Share of households with a trusted flood-information "
+                "source. Survey: 0.46 (95/209).")
 
     # ===================== SECONDARY / STRUCTURAL =====================
     st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
@@ -1484,7 +1455,7 @@ def _config_chips(p):
         ("\u03b8", theta),
         ("\u03bb_flood\u00d7\u03bb_dmg", f"{p['LAMBDA_FLOOD']:.2f}\u00d7{p['LAMBDA_DAMAGE_MAX']:.2f}"),
         ("\u03bb_obs\u00d7\u03bb_sim", f"{p['LAMBDA_OBSERVATION']:.2f}\u00d7{p['LAMBDA_SIMILARITY']:.2f}"),
-        ("\u03bb_info\u00d7\u03bb_resp", f"{p['LAMBDA_INFO']:.2f}\u00d7{p['LAMBDA_RESPONSE']:.2f}"),
+        ("\u03bb_info", f"{p['LAMBDA_INFO']:.2f}"),
         ("Seed", p["RANDOM_SEED"]),
     ]
     html = '<div class="chips">' + "".join(
@@ -1650,17 +1621,16 @@ def _page_documentation():
              r"\lambda_{\text{damage}}\bigr)}_{\text{experience (per flood)}}\times "
              r"\underbrace{\bigl(\lambda_{\text{obs}}\times"
              r"\lambda_{\text{sim}}\bigr)}_{\text{proximity (per neighbour)}}\times "
-             r"\underbrace{\bigl(\lambda_{\text{info}}\times"
-             r"\lambda_{\text{response}}\bigr)}_{\text{information (once, }t=0)}")
-    st.markdown("Each parenthesised group is one channel: the first term is the "
-                "base factor and the term(s) after $\\times$ are conditional "
-                "multipliers that equal 1 when their trigger is absent "
+             r"\underbrace{\lambda_{\text{info}}}_{\text{information (once, }t=0)}")
+    st.markdown("Each group is one channel: the first term is the base factor "
+                "and the term(s) after $\\times$ are conditional multipliers "
+                "that equal 1 when their trigger is absent "
                 "($\\lambda_{\\text{damage}}$ scales with flood depth, "
-                "$\\lambda_{\\text{sim}}$ applies only to a similar neighbour, "
-                "$\\lambda_{\\text{response}}$ only to forecast-preparers). The "
-                "experience group is applied once per flood and the proximity "
-                "group once per newly-retrofitted connected neighbour, so those "
-                "groups repeat as many times as their events occur in a step.")
+                "$\\lambda_{\\text{sim}}$ applies only to a similar "
+                "neighbour). The experience group is applied once per flood and "
+                "the proximity group once per newly-retrofitted connected "
+                "neighbour, so those groups repeat as many times as their "
+                "events occur in a step; the information factor fires once.")
     st.markdown("**Step 3 \u2014 Convert the posterior odds back to a probability:**")
     st.latex(r"P_i^{\text{post}}(H_1) = \frac{O_i^{\text{post}}}{1 + O_i^{\text{post}}}")
     st.markdown("This is algebraically identical to the standard form of Bayes\u2019 "
@@ -1669,9 +1639,7 @@ def _page_documentation():
 
     st.markdown("**Worked example.** Take a prior belief $P(H_1)=0.08$, so the "
                 "prior odds are $O = 0.08/0.92 = 0.087$. Suppose a household with "
-                "a trusted information source ($\\lambda_{info}=1.05$) who also "
-                "takes precautionary action on the forecast "
-                "($\\lambda_{response}=1.15$) then "
+                "a trusted information source ($\\lambda_{info}=1.05$) then "
                 "experiences two floods, each about half the total-failure "
                 "depth so the damage fraction is $D\\approx0.70$ and "
                 "$\\lambda_{damage}=1+(1.20-1)\\times0.70\\approx1.14$ "
@@ -1679,11 +1647,11 @@ def _page_documentation():
                 "information channel fires once at $t=0$ and each flood fires "
                 "when it occurs:")
     st.latex(r"O_{\text{final}} = 0.087 \times "
-             r"\underbrace{(1.05\times1.15)}_{\text{information}} \times "
+             r"\underbrace{1.05}_{\text{information}} \times "
              r"\underbrace{(1.52\times1.14)}_{\text{flood 1}} \times "
-             r"\underbrace{(1.52\times1.14)}_{\text{flood 2}} = 0.32")
-    st.markdown("Converting back, $P_{\\text{final}}(H_1) = 0.32/(1+0.32) = "
-                "0.24$. Belief has risen from 0.08 to 0.24 \u2014 still below a "
+             r"\underbrace{(1.52\times1.14)}_{\text{flood 2}} = 0.27")
+    st.markdown("Converting back, $P_{\\text{final}}(H_1) = 0.27/(1+0.27) = "
+                "0.22$. Belief has risen from 0.08 to 0.22 \u2014 still below a "
                 "threshold of $\\theta=0.85$, so this household would not yet "
                 "retrofit. It illustrates why several strong signals are "
                 "typically needed to cross the bar, matching the low observed "
@@ -1774,39 +1742,28 @@ def _page_documentation():
 
     st.markdown("#### 3.5 &nbsp; Channel 3: trusted information")
     st.markdown(
-        "Applied **once, at initialisation**, because trusted-information and "
-        "forecast use are stable household traits rather than repeated "
-        "events. Households with a trusted flood-information source apply a base "
-        "factor $\\lambda_{info}$, multiplied by a response multiplier "
-        "$\\lambda_{response}$ for those who also take **precautionary action "
-        "based on the forecast data**:")
+        "Applied **once, at initialisation**, because having a trusted "
+        "flood-information source is a stable household trait rather than a "
+        "repeated event. Households with such a source apply the factor "
+        "$\\lambda_{info}$; everyone else is unaffected:")
     st.latex(r"""\lambda_{\text{info},i} =
 \begin{cases}
-\lambda_{info}\cdot\lambda_{response} & \text{trusted info and precautionary action on forecast}\\
-\lambda_{info} & \text{trusted info only}\\
+\lambda_{info} & \text{trusted information}\\
 1 & \text{no trusted information}
 \end{cases}""")
-    st.markdown("In the survey, having a trusted source alone is weak "
-                "(odds ratio \u2248 1.39, n.s.) while taking precautionary action "
-                "based on the forecast data is the stronger amplifier "
-                "(odds ratio \u2248 3.2), which is why the base "
-                "is the weaker term and the multiplier the stronger one. This "
-                "channel represents an informational prior that lifts belief at "
-                "$t=0$ for informed households.")
+    st.markdown("This channel represents an informational prior that lifts "
+                "belief at $t=0$ for informed households. It can be switched "
+                "off entirely, in which case $\\lambda_{info}=1$ and the "
+                "channel is inert.")
 
     # ---- 4 Static traits ----
     st.markdown('<div class="doc-h">4 &nbsp; Static household traits</div>',
                 unsafe_allow_html=True)
     st.markdown(
-        "Two binary traits gate the conditional multipliers on the information "
-        "channel: *has trusted information* and *takes precautionary action on "
-        "forecasts*. Trusted information is assigned at random using the "
-        "survey-anchored fraction ($P_{\\text{info}}=0.46$). **Forecast "
-        "preparation is conditional on being informed**: among households with "
-        "trusted information, a fraction "
-        "$P_{\\text{prep}\\,|\\,\\text{info}}=0.78$ also "
-        "take precautionary action on the forecast (survey: 74/95). Both traits "
-        "are fixed for the life of the simulation. The flood-experience channel "
+        "One binary trait gates the information channel: *has trusted "
+        "information*. It is assigned at random using the survey-anchored "
+        "fraction ($P_{\\text{info}}=0.46$, i.e. 95/209 households) and is "
+        "fixed for the life of the simulation. The flood-experience channel "
         "needs no such trait: its damage multiplier is computed directly from "
         "each flood's depth.")
 
@@ -1862,8 +1819,8 @@ def _page_documentation():
         "All parameters live on the **Settings** page, grouped into core "
         "decision drivers (belief, the three channels, the threshold) and "
         "structural environment settings. Survey-anchored starting values: "
-        "$\\lambda_{flood}=1.52$, $\\lambda_{response}\\approx3.2$; information "
-        "trait fractions 0.48 / 0.65. The flood-experience severity is set by "
+        "$\\lambda_{flood}=1.52$; trusted-information fraction 0.46. "
+        "The flood-experience severity is set by "
         "$\\lambda_{damage}^{\\max}$ (default 1.20), the total-failure depth "
         "(default 0.05), and the depth\u2013damage curve, rather than by a trait. "
         "The opening defaults are deliberately de-escalated from these raw "
@@ -1922,10 +1879,9 @@ def _page_documentation():
         "damaging floods drive stronger protective responses, motivating the "
         "depth-driven $\\lambda_{damage}$ multiplier on the experience channel: "
         "each flood's effect scales with the damage its depth implies.\n"
-        "- **Trusted information and precautionary action raise adoption.** "
-        "Households with a trusted information source (35% vs 21%) and those "
-        "taking precautionary action based on the forecast data (31% vs 17%) "
-        "retrofit more, motivating the "
+        "- **Trusted information raises adoption.** "
+        "Households with a trusted information source retrofit more "
+        "(35% vs 21%), motivating the "
         "information channel; institutional/government sources show the "
         "strongest association.\n"
         "- **No income gradient.** Flood exposure and damage do not vary with "
@@ -1940,9 +1896,8 @@ def _page_documentation():
         "- **Homogeneous prior belief.** All households begin with the same "
         "$P(H_1)$; only the threshold is heterogeneous. This is a modelling "
         "choice for identifiability, not an empirical claim.\n"
-        "- **Static traits.** Expects-rising-damage, trusted-information, and "
-        "forecast-preparation are fixed at $t=0$; the model does not let "
-        "information spread or beliefs about severity evolve endogenously.\n"
+        "- **Static trait.** Trusted-information is fixed at $t=0$; the model "
+        "does not let information spread endogenously.\n"
         "- **One-shot information channel.** Trusted information applies once, "
         "as a prior, rather than as repeated exposure.\n"
         "- **Absorbing retrofit.** Households never de-adapt or move.\n"
@@ -2155,7 +2110,7 @@ def _workflow_svg():
 
       <!-- boxes -->
       {box("init", "", INK, "Initialization", "households, elevation, network, ties", grad=True)}
-      {box("assign", "#f1f5f9", "#cbd5e1", "Assign attributes &amp; prior belief", "attributes, elevation, trusted info, forecast info", tcol=INK)}
+      {box("assign", "#f1f5f9", "#cbd5e1", "Assign attributes &amp; prior belief", "attributes, elevation, trusted info", tcol=INK)}
       {box("flood", "#e0f2fe", SKY, "Annual flood level", "GEV sample f\u209c", tcol=INK, fs=14)}
       {box("ch1", C1, "#0369a1", "Channel 1", "Flood experience", "\u03bb_flood \u00d7 \u03bb_damage", fs=14)}
       {box("ch2", C2, "#15803d", "Channel 2", "Proximity", "\u03bb_obs \u00d7 \u03bb_sim", fs=14)}
